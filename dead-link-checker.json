@@ -1,0 +1,738 @@
+{
+  "name": "Website Dead Link Checker",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔗 Dead Link Checker\n\n**Quick start**\n1. Open the **Config** node and set `siteUrl`\n2. Click *Execute workflow*\n3. Check the **Build Report** node output\n\n**How it works**\nsitemap.xml → pages → collect links → HEAD check → GET retry for stubborn servers → report.\n\nActivate the workflow to run the daily schedule.",
+        "width": 320,
+        "height": 500
+      },
+      "id": "1a6f0c2e-9b1d-4e5a-8c3f-01aa11bb22cc",
+      "name": "Sticky Note - Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1460, 180]
+    },
+    {
+      "parameters": {
+        "content": "### 1. Find pages\nReads `sitemap.xml` (handles sitemap indexes one level deep, e.g. WordPress). Falls back to just the homepage if no sitemap exists.",
+        "width": 900,
+        "height": 120
+      },
+      "id": "2b7e1d3f-0c2e-4f6b-9d40-12bb22cc33dd",
+      "name": "Sticky Note - Pages",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-920, 200]
+    },
+    {
+      "parameters": {
+        "content": "### 2. Collect links\nFetches every page and extracts all `<a href>` links, resolves them to absolute URLs and deduplicates. The report remembers which pages each link was found on.",
+        "width": 420,
+        "height": 130
+      },
+      "id": "3c8f2e40-1d3f-4a7c-ae51-23cc33dd44ee",
+      "name": "Sticky Note - Links",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [620, 200]
+    },
+    {
+      "parameters": {
+        "content": "### 3. Check every link\nHEAD request first (fast, no download). Anything that is not a clean 2xx/3xx or a definite 404/410 gets rechecked with a real GET, because many servers reject HEAD (403/405/999).",
+        "width": 900,
+        "height": 130
+      },
+      "id": "4d903f51-2e40-4b8d-bf62-34dd44ee55ff",
+      "name": "Sticky Note - Check",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1080, 200]
+    },
+    {
+      "parameters": {
+        "content": "### 4. Report\nThe email node is **disabled** so the workflow runs without credentials. Add SMTP credentials and enable it — or replace it with Slack / Discord / Telegram / Google Sheets.",
+        "width": 460,
+        "height": 130
+      },
+      "id": "5ea14062-3f51-4c9e-a073-45ee55ff6600",
+      "name": "Sticky Note - Report",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2380, 200]
+    },
+    {
+      "parameters": {},
+      "id": "6fb25173-4062-4daf-b184-56ff66007711",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1360, 400]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 7,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "70c36284-5173-4eb0-c295-670077118822",
+      "name": "Run Daily at 7:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1360, 580]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "81d47395-6284-4fc1-d3a6-780088229933",
+              "name": "siteUrl",
+              "value": "https://example.com",
+              "type": "string"
+            },
+            {
+              "id": "92e584a6-7395-40d2-e4b7-890099330044",
+              "name": "checkExternalLinks",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a3f695b7-84a6-41e3-f5c8-9011aa440155",
+              "name": "maxPages",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "b40706c8-95b7-42f4-06d9-0122bb550266",
+              "name": "skipDomains",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c51817d9-a6c8-4305-17ea-1233cc660377",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, 490]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.siteUrl.replace(/\\/+$/, '') + '/sitemap.xml' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "d62928ea-b7d9-4416-28fb-2344dd770488",
+      "name": "Fetch Sitemap",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-880, 490],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the sitemap XML and split entries into pages and child sitemaps.\n// Falls back to checking just the homepage when no sitemap exists.\nconst config = $('Config').first().json;\nconst res = $input.first().json;\n\nconst decode = (s) => s\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\");\n\n// The HTTP node puts the response text in 'data' (some setups use 'body')\nconst raw = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : '');\nconst body = (!res.error && (res.statusCode === undefined || res.statusCode === 200)) ? raw : '';\nconst out = [];\n\nfor (const m of body.matchAll(/<loc>\\s*([\\s\\S]*?)\\s*<\\/loc>/gi)) {\n  const loc = decode(m[1].trim());\n  const type = /\\.xml(\\?|$)/i.test(loc) ? 'sitemap' : 'page';\n  out.push({ json: { url: loc, type } });\n}\n\nif (out.length === 0) {\n  out.push({ json: { url: config.siteUrl, type: 'page' } });\n}\n\nreturn out;"
+      },
+      "id": "e73a39fb-c8ea-4527-390c-3455ee880599",
+      "name": "Parse Sitemap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-660, 490]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f84b4a0c-d9fb-4638-4a1d-4566ff9906aa",
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "sitemap",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "095c5b1d-ea0c-4749-5b2e-567700aa17bb",
+      "name": "Is Child Sitemap?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-440, 490]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "1a6d6c2e-fb1d-485a-6c3f-678811bb28cc",
+      "name": "Fetch Child Sitemaps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-220, 380],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract page URLs from each child sitemap (one level deep).\nconst decode = (s) => s.replace(/&amp;/g, '&');\nconst out = [];\n\nfor (const item of $input.all()) {\n  const res = item.json;\n  const raw = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : '');\n  if (res.error || (res.statusCode !== undefined && res.statusCode !== 200)) continue;\n  for (const m of raw.matchAll(/<loc>\\s*([\\s\\S]*?)\\s*<\\/loc>/gi)) {\n    const loc = decode(m[1].trim());\n    if (!/\\.xml(\\?|$)/i.test(loc)) out.push({ json: { url: loc, type: 'page' } });\n  }\n}\n\nreturn out;"
+      },
+      "id": "2b7e7d3f-0c2e-496b-7d40-789922cc39dd",
+      "name": "Parse Child Sitemaps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 380]
+    },
+    {
+      "parameters": {},
+      "id": "3c8f8e40-1d3f-4a7c-8e51-8900a3dd40ee",
+      "name": "Merge Page Lists",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [220, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deduplicate page URLs and cap the total so runs stay fast.\nconst config = $('Config').first().json;\nconst maxPages = Number(config.maxPages) || 50;\n\nconst seen = new Set();\nconst out = [];\n\nfor (const item of $input.all()) {\n  if (!item.json.url) continue;\n  const url = item.json.url.split('#')[0];\n  if (seen.has(url)) continue;\n  seen.add(url);\n  out.push({ json: { url } });\n  if (out.length >= maxPages) break;\n}\n\nreturn out;"
+      },
+      "id": "4d909f51-2e40-4b8d-9f62-9011b4ee51ff",
+      "name": "Collect Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 500]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "5ea1a062-3f51-4c9e-a073-0122c5ff62a0",
+      "name": "Fetch Pages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 500],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pull every <a href> out of each page, resolve to absolute URLs and deduplicate.\n// URL handling is plain JS because the Code node sandbox has no URL class.\nconst config = $('Config').first().json;\nconst pages = $('Collect Pages').all();\nconst responses = $input.all();\n\nconst parseUrl = (url) => {\n  const m = String(url).trim().match(/^(https?):\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?/i);\n  if (!m) return null;\n  return { protocol: m[1].toLowerCase(), host: m[2].toLowerCase(), path: m[3] || '/', query: m[4] || '' };\n};\n\nconst normalizePath = (path) => {\n  const out = [];\n  for (const seg of path.split('/')) {\n    if (seg === '.') continue;\n    if (seg === '..') { if (out.length > 1) out.pop(); continue; }\n    out.push(seg);\n  }\n  return out.join('/') || '/';\n};\n\nconst resolveHref = (href, page) => {\n  let abs;\n  if (/^https?:\\/\\//i.test(href)) abs = href;\n  else if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null; // mailto:, tel:, javascript:, ...\n  else if (href.startsWith('//')) abs = page.protocol + ':' + href;\n  else if (href.startsWith('/')) abs = page.protocol + '://' + page.host + href;\n  else if (href.startsWith('?')) abs = page.protocol + '://' + page.host + page.path + href;\n  else {\n    const dir = page.path.slice(0, page.path.lastIndexOf('/') + 1) || '/';\n    abs = page.protocol + '://' + page.host + dir + href;\n  }\n  const parsed = parseUrl(abs);\n  if (!parsed) return null;\n  return parsed.protocol + '://' + parsed.host + normalizePath(parsed.path) + parsed.query;\n};\n\nconst site = parseUrl(config.siteUrl);\nif (!site) throw new Error('Config -> siteUrl must start with http:// or https://');\n\nconst skipDomains = String(config.skipDomains || '')\n  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);\n\nconst linkMap = new Map(); // url -> Set of pages it appears on\n\nconst addLink = (url, foundOn) => {\n  if (!linkMap.has(url)) linkMap.set(url, new Set());\n  linkMap.get(url).add(foundOn);\n};\n\nfor (let i = 0; i < responses.length; i++) {\n  const pageUrl = pages[i].json.url;\n  const res = responses[i].json;\n\n  const html = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : null);\n\n  // The page itself did not load - queue it so the checker confirms and reports it\n  if (res.error || html === null || (res.statusCode && res.statusCode >= 400)) {\n    addLink(pageUrl, '(page listed in sitemap)');\n    continue;\n  }\n\n  const page = parseUrl(pageUrl);\n  if (!page) continue;\n\n  for (const m of html.matchAll(/<a\\s[^>]*href\\s*=\\s*[\"']([^\"']+)[\"']/gi)) {\n    const href = m[1].replace(/&amp;/g, '&').trim().split('#')[0];\n    if (!href) continue;\n\n    const link = resolveHref(href, page);\n    if (!link) continue;\n\n    const host = parseUrl(link).host;\n    if (!config.checkExternalLinks && host !== site.host) continue;\n    if (skipDomains.some((d) => host === d || host.endsWith('.' + d))) continue;\n\n    addLink(link, pageUrl);\n  }\n}\n\nreturn [...linkMap.entries()].map(([url, foundOn]) => ({\n  json: { url, foundOn: [...foundOn] },\n}));"
+      },
+      "id": "6fb2b173-4062-4daf-b184-2344d6a073b1",
+      "name": "Extract Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 500]
+    },
+    {
+      "parameters": {
+        "method": "HEAD",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000,
+          "batching": {
+            "batch": {
+              "batchSize": 10,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "70c3c284-5173-4eb0-c295-3455e7b184c2",
+      "name": "Check Links (HEAD)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 500],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide per link: ok, broken, or needs a GET retry.\n// Many servers reject HEAD (403/405/999) even though the page exists,\n// so anything that is not a clean 2xx/3xx or a definite 404/410 gets rechecked.\nconst links = $('Extract Links').all();\nconst results = $input.all();\nconst out = [];\n\nfor (let i = 0; i < results.length; i++) {\n  const link = links[i].json;\n  const res = results[i].json;\n  const status = res.error ? 0 : (res.statusCode || 0);\n\n  let verdict;\n  if (status >= 200 && status < 400) verdict = 'ok';\n  else if (status === 404 || status === 410) verdict = 'broken';\n  else verdict = 'retry';\n\n  out.push({ json: { url: link.url, foundOn: link.foundOn, status, verdict } });\n}\n\nreturn out;"
+      },
+      "id": "81d4d395-6284-4fc1-d3a6-4566f8c295d3",
+      "name": "Triage HEAD Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "92e5e4a6-7395-40d2-e4b7-567709d3a6e4",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "retry",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a3f6f5b7-84a6-41e3-f5c8-67881ae4b7f5",
+      "name": "Needs GET Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1540, 500]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "b40706c8-95b7-42f4-06d9-78992bf5c806",
+      "name": "Recheck with GET",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 380],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final verdict for links that were inconclusive over HEAD.\nconst retried = $('Needs GET Retry?').all(0); // items from the \"true\" branch\nconst results = $input.all();\nconst out = [];\n\nfor (let i = 0; i < results.length; i++) {\n  const link = retried[i].json;\n  const res = results[i].json;\n  const status = res.error ? 0 : (res.statusCode || 0);\n  const ok = status >= 200 && status < 400;\n\n  out.push({ json: { url: link.url, foundOn: link.foundOn, status, verdict: ok ? 'ok' : 'broken' } });\n}\n\nreturn out;"
+      },
+      "id": "c51887d9-a6c8-4305-97ea-8900ac06d917",
+      "name": "Finalize GET Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 380]
+    },
+    {
+      "parameters": {},
+      "id": "d62998ea-b7d9-4416-a8fb-9011bd17ea28",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2200, 510]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summarise results into a single report item.\nconst config = $('Config').first().json;\nconst all = $input.all().map((i) => i.json);\nconst broken = all\n  .filter((l) => l.verdict === 'broken')\n  .sort((a, b) => a.url.localeCompare(b.url));\n\nconst lines = broken.map((l) => {\n  const status = l.status === 0 ? 'unreachable (DNS error or timeout)' : `HTTP ${l.status}`;\n  return `- ${l.url}\\n  ${status} | found on: ${l.foundOn.join(', ')}`;\n});\n\nconst report = [\n  `Link check for ${config.siteUrl}`,\n  `Checked ${all.length} unique links, found ${broken.length} broken.`,\n  '',\n  ...lines,\n].join('\\n');\n\nreturn [{\n  json: {\n    siteUrl: config.siteUrl,\n    checkedAt: new Date().toISOString(),\n    totalLinks: all.length,\n    brokenCount: broken.length,\n    broken,\n    report,\n  },\n}];"
+      },
+      "id": "e73a39fb-c8ea-4527-b90c-0122ce28fb39",
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 510]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f84b4b0c-d9fb-4638-4a1d-2344df39c04a",
+              "leftValue": "={{ $json.brokenCount }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "095c5c1d-ea0c-4749-5b2e-3455e04a1d5b",
+      "name": "Any Broken Links?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2640, 510]
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n@example.com",
+        "toEmail": "you@example.com",
+        "subject": "=Link check: {{ $json.brokenCount }} broken link(s) on {{ $json.siteUrl }}",
+        "emailFormat": "text",
+        "text": "={{ $json.report }}",
+        "options": {}
+      },
+      "id": "1b6d6d2e-fb1d-485a-6c3f-4566f15b2e6c",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2860, 510],
+      "disabled": true
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Daily at 7:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sitemap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sitemap": {
+      "main": [
+        [
+          {
+            "node": "Parse Sitemap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Sitemap": {
+      "main": [
+        [
+          {
+            "node": "Is Child Sitemap?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Child Sitemap?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Child Sitemaps",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Page Lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Child Sitemaps": {
+      "main": [
+        [
+          {
+            "node": "Parse Child Sitemaps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Child Sitemaps": {
+      "main": [
+        [
+          {
+            "node": "Merge Page Lists",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Page Lists": {
+      "main": [
+        [
+          {
+            "node": "Collect Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Pages": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pages": {
+      "main": [
+        [
+          {
+            "node": "Extract Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Links": {
+      "main": [
+        [
+          {
+            "node": "Check Links (HEAD)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Links (HEAD)": {
+      "main": [
+        [
+          {
+            "node": "Triage HEAD Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triage HEAD Results": {
+      "main": [
+        [
+          {
+            "node": "Needs GET Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs GET Retry?": {
+      "main": [
+        [
+          {
+            "node": "Recheck with GET",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recheck with GET": {
+      "main": [
+        [
+          {
+            "node": "Finalize GET Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize GET Results": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report": {
+      "main": [
+        [
+          {
+            "node": "Any Broken Links?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Broken Links?": {
+      "main": [
+        [
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
