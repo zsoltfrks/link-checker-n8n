@@ -13,28 +13,6 @@ Point it at a site and it crawls the sitemap, checks every unique link it finds,
 - **Zero dependencies** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
 - **Ready to schedule** — comes with a daily trigger, just activate the workflow
 
-## How it works
-
-```
-sitemap.xml ──► page URLs ──► fetch pages ──► extract <a href> links
-                                                      │
-report ◄── GET retry (for servers that block HEAD) ◄── HEAD check
-```
-
-The workflow discovers pages through `sitemap.xml`, fetches each one, extracts and deduplicates all `<a href>` links, then verifies them. Links that fail a `HEAD` check with anything other than a definite 404/410 are rechecked with a real `GET` before being reported, which keeps false positives low.
-
-A run produces a report like this (see the **Build Report** node output):
-
-```
-Link check for https://example.com
-Checked 142 unique links, found 2 broken.
-
-- https://example.com/old-blog-post
-  HTTP 404 | found on: https://example.com/blog, https://example.com/archive
-- https://gone-domain.example
-  unreachable (DNS error or timeout) | found on: https://example.com/links
-```
-
 ## Getting started
 
 ### Prerequisites
@@ -82,6 +60,29 @@ The **Send Email Report** node ships disabled so the workflow runs without crede
 
 > [!TIP]
 > The report is available as `{{ $json.report }}` (plain text) and `{{ $json.broken }}` (a structured array with `url`, `status` and `foundOn`), so any notification node can be wired in with two clicks.
+
+
+## How it works
+
+```
+sitemap.xml ──► page URLs ──► fetch pages ──► extract <a href> links
+                                                      │
+report ◄── GET retry (for servers that block HEAD) ◄── HEAD check
+```
+
+The workflow discovers pages through `sitemap.xml`, fetches each one, extracts and deduplicates all `<a href>` links, then verifies them. Links that fail a `HEAD` check with anything other than a definite 404/410 are rechecked with a real `GET` before being reported, which keeps false positives low.
+
+A run produces a report like this (see the **Build Report** node output):
+
+```
+Link check for https://example.com
+Checked 142 unique links, found 2 broken.
+
+- https://example.com/old-blog-post
+  HTTP 404 | found on: https://example.com/blog, https://example.com/archive
+- https://gone-domain.example
+  unreachable (DNS error or timeout) | found on: https://example.com/links
+```
 
 ## Limitations
 
