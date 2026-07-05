@@ -15,30 +15,6 @@ Point it at a site and it crawls the sitemap, checks every unique link it finds,
 
 ## Getting started
 
-### Prerequisites
-
-- An [n8n](https://n8n.io) **1.x** instance, self-hosted or on n8n Cloud
-- Or [Docker](https://www.docker.com), to spin one up locally (see below)
-
-### Run n8n with Docker (optional)
-
-If you don't have an n8n instance yet, [`docker-compose.yml`](docker-compose.yml) starts one:
-
-```bash
-docker compose up -d
-```
-
-Open <http://localhost:5678>, create the owner account, and import the workflow straight from the CLI:
-
-```bash
-docker compose exec n8n n8n import:workflow --input=/workflows/dead-link-checker.json
-```
-
-All data is persisted in the `n8n_data` volume, and the timezone in the compose file controls when the daily schedule fires.
-
-> [!NOTE]
-> If you open n8n from another machine over plain HTTP (not `localhost`), the login cookie is rejected — uncomment `N8N_SECURE_COOKIE=false` in the compose file.
-
 ### Import and configure the workflow
 
 1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json) (skip if you imported via the CLI above).
