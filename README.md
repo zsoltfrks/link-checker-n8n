@@ -17,7 +17,7 @@ Point it at a site and it crawls the sitemap, checks every unique link it finds,
 
 ### Import and configure the workflow
 
-1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json) (skip if you imported via the CLI above).
+1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json)
 2. Open the **Config** node and set your values:
 
    | Field                | Default               | Description                                                |
