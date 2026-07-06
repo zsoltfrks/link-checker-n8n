@@ -1,9 +1,15 @@
-# Link Health Checker N8N
+<div align="center">
 
-[![n8n](https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+   # Link Health Checker N8N
+   
+   <a href="https://n8n.io"><img src="https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white" alt="n8n"></a>
+   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
+   <img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" alt="Maintained">
+   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
 
-Point it at a site and it crawls the sitemap, checks every unique link it finds, and reports the broken ones — including which pages they appear on, so you know exactly what to fix.
+</div>
+
+Point it at a site and it crawls the sitemap, checks every unique link it finds, and reports the broken ones, including which pages they appear on, so you know exactly what to fix.
 
 ## Features
 
