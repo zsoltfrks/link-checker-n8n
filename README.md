@@ -1,11 +1,11 @@
 <div align="center">
 
-   # Link Health Checker N8N
-   
-   <a href="https://n8n.io"><img src="https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white" alt="n8n"></a>
-   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-   <img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" alt="Maintained">
-   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+# Link Health Checker N8N
+
+<a href="https://n8n.io"><img src="https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white&style=for-the-badge" alt="n8n"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
+<img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge" alt="Maintained">
+<img src="https://img.shields.io/badge/PRs-welcome-green.svg?style=for-the-badge" alt="PRs Welcome">
 
 </div>
 
