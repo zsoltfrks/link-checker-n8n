@@ -117,6 +117,17 @@ The **Send Email Report** node ships disabled so the workflow runs without crede
 > [!TIP]
 > The report is available as `{{ $json.report }}` (plain text) and `{{ $json.broken }}` (a structured array with `url`, `status` and `foundOn`), so any notification node can be wired in with two clicks.
 
+## Standalone Python script
+
+Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/link_checker.py`](scripts/link_checker.py) is a dependency-free port of the workflow (Python 3.9+, standard library only):
+
+```bash
+python scripts/link_checker.py https://example.com https://example.org
+python scripts/link_checker.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
+```
+
+It prints the same per-site report and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
+
 ## Limitations
 
 - Requests are throttled (batches of 5–10 per second) to be polite to the target site.
