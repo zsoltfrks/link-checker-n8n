@@ -9,7 +9,7 @@
 
 </div>
 
-Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones — grouped per site and including which pages they appear on, so you know exactly what to fix.
+Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones grouped per site and including which pages they appear on, so you know exactly what to fix.
 
 ## Features
 
