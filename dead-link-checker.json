@@ -27,7 +27,7 @@
     },
     {
       "parameters": {
-        "content": "### 2. Collect links\nFetches every page and extracts all `<a href>` links, resolves them to absolute URLs and deduplicates. The report remembers which pages each link was found on.",
+        "content": "### 2. Collect links\nFetches every page and extracts all `<a href>` links, resolves them to absolute URLs and deduplicates them. The report remembers which pages each link was found on.",
         "width": 420,
         "height": 130
       },
