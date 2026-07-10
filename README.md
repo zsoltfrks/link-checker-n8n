@@ -7,6 +7,8 @@
 <img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg?" alt="Maintained">
 <img src="https://img.shields.io/badge/PRs-welcome-green.svg?" alt="PRs Welcome">
 
+</div>
+
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones — grouped per site and including which pages they appear on, so you know exactly what to fix.
 
 ## Features
