@@ -1,7 +1,11 @@
+<div align="center">
+
 # Link Health Checker N8N
 
-[![n8n](https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+<a href="https://n8n.io"><img src="https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white" alt="n8n"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?" alt="License"></a>
+<img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg?" alt="Maintained">
+<img src="https://img.shields.io/badge/PRs-welcome-green.svg?" alt="PRs Welcome">
 
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones — grouped per site and including which pages they appear on, so you know exactly what to fix.
 
@@ -13,6 +17,30 @@ Point it at one or more sites and it crawls their sitemaps, checks every unique 
 - **Actionable reports** — every broken link with its HTTP status and the pages it was found on
 - **Zero dependencies** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
 - **Ready to schedule** — comes with a daily trigger, just activate the workflow
+
+## Getting started
+
+### Import and configure the workflow
+
+1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json)
+2. Open the **Config** node and set your values:
+
+   | Field                | Default               | Description                                                |
+   | -------------------- | --------------------- | ---------------------------------------------------------- |
+   | `siteUrl`            | `https://example.com` | The website to check                                       |
+   | `checkExternalLinks` | `true`                | Also check links pointing to other domains                 |
+   | `maxPages`           | `50`                  | Cap on how many pages are crawled per run                  |
+   | `skipDomains`        | _(empty)_             | Comma-separated domains to skip, e.g. `linkedin.com,x.com` |
+
+3. Click **Execute workflow** and inspect the output of the **Build Report** node.
+4. **Activate** the workflow to run the daily 7:00 check automatically.
+
+### Get notified
+
+The **Send Email Report** node ships disabled so the workflow runs without credentials. Add SMTP credentials, set the from/to addresses and enable it — or swap it for a Slack, Discord or Telegram node.
+
+> [!TIP]
+> The report is available as `{{ $json.report }}` (plain text) and `{{ $json.broken }}` (a structured array with `url`, `status` and `foundOn`), so any notification node can be wired in with two clicks.
 
 ## How it works
 
@@ -70,12 +98,12 @@ All data is persisted in the `n8n_data` volume, and the timezone in the compose 
 1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json) (skip if you imported via the CLI above).
 2. Open the **Config** node and set your values:
 
-   | Field                | Default               | Description                                                |
-   | -------------------- | --------------------- | ---------------------------------------------------------- |
+   | Field                | Default                                    | Description                                                     |
+   | -------------------- | ------------------------------------------ | --------------------------------------------------------------- |
    | `siteUrls`           | `https://example.com, https://example.org` | One or more websites to check, separated by commas or new lines |
-   | `checkExternalLinks` | `true`                | Also check links pointing to other domains                 |
-   | `maxPages`           | `50`                  | Cap on how many pages are crawled per run                  |
-   | `skipDomains`        | _(empty)_             | Comma-separated domains to skip, e.g. `linkedin.com,x.com` |
+   | `checkExternalLinks` | `true`                                     | Also check links pointing to other domains                      |
+   | `maxPages`           | `50`                                       | Cap on how many pages are crawled per run                       |
+   | `skipDomains`        | _(empty)_                                  | Comma-separated domains to skip, e.g. `linkedin.com,x.com`      |
 
 3. Click **Execute workflow** and inspect the output of the **Build Report** node.
 4. **Activate** the workflow to run the daily 7:00 check automatically.
