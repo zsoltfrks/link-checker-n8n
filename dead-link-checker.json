@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 🔗 Dead Link Checker\n\n**Quick start**\n1. Open the **Config** node and set `siteUrl`\n2. Click *Execute workflow*\n3. Check the **Build Report** node output\n\n**How it works**\nsitemap.xml → pages → collect links → HEAD check → GET retry for stubborn servers → report.\n\nActivate the workflow to run the daily schedule.",
+        "content": "## Dead Link Checker\n\n**Quick start**\n1. Open the **Config** node and set `siteUrls` (one or more, comma separated)\n2. Click *Execute workflow*\n3. Check the **Build Report** node output\n\n**How it works**\nsitemap.xml → pages → collect links → HEAD check → GET retry for stubborn servers → report.\n\nActivate the workflow to run the daily schedule.",
         "width": 320,
         "height": 500
       },
@@ -94,8 +94,8 @@
           "assignments": [
             {
               "id": "81d47395-6284-4fc1-d3a6-780088229933",
-              "name": "siteUrl",
-              "value": "https://example.com",
+              "name": "siteUrls",
+              "value": "https://example.com, https://example.org",
               "type": "string"
             },
             {
@@ -128,7 +128,17 @@
     },
     {
       "parameters": {
-        "url": "={{ $json.siteUrl.replace(/\\/+$/, '') + '/sitemap.xml' }}",
+        "jsCode": "// Turn the comma or newline separated site list into one item per site.\nconst config = $('Config').first().json;\n\nconst sites = String(config.siteUrls || config.siteUrl || '')\n  .split(/[,\\n]/)\n  .map((s) => s.trim().replace(/\\/+$/, ''))\n  .filter(Boolean);\n\nconst valid = [...new Set(sites)].filter((s) => /^https?:\\/\\//i.test(s));\nif (valid.length === 0) {\n  throw new Error('Config -> siteUrls must contain at least one URL starting with http:// or https://');\n}\n\nreturn valid.map((site) => ({ json: { site } }));"
+      },
+      "id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "name": "Split Sites",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-920, 650]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.site + '/sitemap.xml' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -158,7 +168,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse the sitemap XML and split entries into pages and child sitemaps.\n// Falls back to checking just the homepage when no sitemap exists.\nconst config = $('Config').first().json;\nconst res = $input.first().json;\n\nconst decode = (s) => s\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\");\n\n// The HTTP node puts the response text in 'data' (some setups use 'body')\nconst raw = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : '');\nconst body = (!res.error && (res.statusCode === undefined || res.statusCode === 200)) ? raw : '';\nconst out = [];\n\nfor (const m of body.matchAll(/<loc>\\s*([\\s\\S]*?)\\s*<\\/loc>/gi)) {\n  const loc = decode(m[1].trim());\n  const type = /\\.xml(\\?|$)/i.test(loc) ? 'sitemap' : 'page';\n  out.push({ json: { url: loc, type } });\n}\n\nif (out.length === 0) {\n  out.push({ json: { url: config.siteUrl, type: 'page' } });\n}\n\nreturn out;"
+        "jsCode": "// Parse each site's sitemap and split entries into pages and child sitemaps.\n// Falls back to checking just the homepage for sites without a sitemap.\nconst sites = $('Split Sites').all();\nconst responses = $input.all();\n\nconst decode = (s) => s\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\");\n\nconst out = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const site = sites[i].json.site;\n  const res = responses[i].json;\n\n  // The HTTP node puts the response text in 'data' (some setups use 'body')\n  const raw = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : '');\n  const body = (!res.error && (res.statusCode === undefined || res.statusCode === 200)) ? raw : '';\n\n  let found = 0;\n  for (const m of body.matchAll(/<loc>\\s*([\\s\\S]*?)\\s*<\\/loc>/gi)) {\n    const loc = decode(m[1].trim());\n    const type = /\\.xml(\\?|$)/i.test(loc) ? 'sitemap' : 'page';\n    out.push({ json: { url: loc, type, site } });\n    found++;\n  }\n\n  if (found === 0) {\n    out.push({ json: { url: site, type: 'page', site } });\n  }\n}\n\nreturn out;"
       },
       "id": "e73a39fb-c8ea-4527-390c-3455ee880599",
       "name": "Parse Sitemap",
@@ -234,7 +244,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract page URLs from each child sitemap (one level deep).\nconst decode = (s) => s.replace(/&amp;/g, '&');\nconst out = [];\n\nfor (const item of $input.all()) {\n  const res = item.json;\n  const raw = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : '');\n  if (res.error || (res.statusCode !== undefined && res.statusCode !== 200)) continue;\n  for (const m of raw.matchAll(/<loc>\\s*([\\s\\S]*?)\\s*<\\/loc>/gi)) {\n    const loc = decode(m[1].trim());\n    if (!/\\.xml(\\?|$)/i.test(loc)) out.push({ json: { url: loc, type: 'page' } });\n  }\n}\n\nreturn out;"
+        "jsCode": "// Extract page URLs from each child sitemap (one level deep).\nconst children = $('Is Child Sitemap?').all(0); // items from the \"true\" branch\nconst responses = $input.all();\nconst decode = (s) => s.replace(/&amp;/g, '&');\nconst out = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const site = children[i].json.site;\n  const res = responses[i].json;\n  if (res.error || (res.statusCode !== undefined && res.statusCode !== 200)) continue;\n  const raw = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : '');\n  for (const m of raw.matchAll(/<loc>\\s*([\\s\\S]*?)\\s*<\\/loc>/gi)) {\n    const loc = decode(m[1].trim());\n    if (!/\\.xml(\\?|$)/i.test(loc)) out.push({ json: { url: loc, type: 'page', site } });\n  }\n}\n\nreturn out;"
       },
       "id": "2b7e7d3f-0c2e-496b-7d40-789922cc39dd",
       "name": "Parse Child Sitemaps",
@@ -252,7 +262,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Deduplicate page URLs and cap the total so runs stay fast.\nconst config = $('Config').first().json;\nconst maxPages = Number(config.maxPages) || 50;\n\nconst seen = new Set();\nconst out = [];\n\nfor (const item of $input.all()) {\n  if (!item.json.url) continue;\n  const url = item.json.url.split('#')[0];\n  if (seen.has(url)) continue;\n  seen.add(url);\n  out.push({ json: { url } });\n  if (out.length >= maxPages) break;\n}\n\nreturn out;"
+        "jsCode": "// Deduplicate page URLs and cap each site so runs stay fast.\nconst config = $('Config').first().json;\nconst maxPages = Number(config.maxPages) || 50;\n\nconst seen = new Set();\nconst perSite = {};\nconst out = [];\n\nfor (const item of $input.all()) {\n  if (!item.json.url) continue;\n  const url = item.json.url.split('#')[0];\n  const site = item.json.site;\n  if (seen.has(url)) continue;\n  seen.add(url);\n  perSite[site] = (perSite[site] || 0) + 1;\n  if (perSite[site] > maxPages) continue;\n  out.push({ json: { url, site } });\n}\n\nreturn out;"
       },
       "id": "4d909f51-2e40-4b8d-9f62-9011b4ee51ff",
       "name": "Collect Pages",
@@ -298,7 +308,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Pull every <a href> out of each page, resolve to absolute URLs and deduplicate.\n// URL handling is plain JS because the Code node sandbox has no URL class.\nconst config = $('Config').first().json;\nconst pages = $('Collect Pages').all();\nconst responses = $input.all();\n\nconst parseUrl = (url) => {\n  const m = String(url).trim().match(/^(https?):\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?/i);\n  if (!m) return null;\n  return { protocol: m[1].toLowerCase(), host: m[2].toLowerCase(), path: m[3] || '/', query: m[4] || '' };\n};\n\nconst normalizePath = (path) => {\n  const out = [];\n  for (const seg of path.split('/')) {\n    if (seg === '.') continue;\n    if (seg === '..') { if (out.length > 1) out.pop(); continue; }\n    out.push(seg);\n  }\n  return out.join('/') || '/';\n};\n\nconst resolveHref = (href, page) => {\n  let abs;\n  if (/^https?:\\/\\//i.test(href)) abs = href;\n  else if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null; // mailto:, tel:, javascript:, ...\n  else if (href.startsWith('//')) abs = page.protocol + ':' + href;\n  else if (href.startsWith('/')) abs = page.protocol + '://' + page.host + href;\n  else if (href.startsWith('?')) abs = page.protocol + '://' + page.host + page.path + href;\n  else {\n    const dir = page.path.slice(0, page.path.lastIndexOf('/') + 1) || '/';\n    abs = page.protocol + '://' + page.host + dir + href;\n  }\n  const parsed = parseUrl(abs);\n  if (!parsed) return null;\n  return parsed.protocol + '://' + parsed.host + normalizePath(parsed.path) + parsed.query;\n};\n\nconst site = parseUrl(config.siteUrl);\nif (!site) throw new Error('Config -> siteUrl must start with http:// or https://');\n\nconst skipDomains = String(config.skipDomains || '')\n  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);\n\nconst linkMap = new Map(); // url -> Set of pages it appears on\n\nconst addLink = (url, foundOn) => {\n  if (!linkMap.has(url)) linkMap.set(url, new Set());\n  linkMap.get(url).add(foundOn);\n};\n\nfor (let i = 0; i < responses.length; i++) {\n  const pageUrl = pages[i].json.url;\n  const res = responses[i].json;\n\n  const html = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : null);\n\n  // The page itself did not load - queue it so the checker confirms and reports it\n  if (res.error || html === null || (res.statusCode && res.statusCode >= 400)) {\n    addLink(pageUrl, '(page listed in sitemap)');\n    continue;\n  }\n\n  const page = parseUrl(pageUrl);\n  if (!page) continue;\n\n  for (const m of html.matchAll(/<a\\s[^>]*href\\s*=\\s*[\"']([^\"']+)[\"']/gi)) {\n    const href = m[1].replace(/&amp;/g, '&').trim().split('#')[0];\n    if (!href) continue;\n\n    const link = resolveHref(href, page);\n    if (!link) continue;\n\n    const host = parseUrl(link).host;\n    if (!config.checkExternalLinks && host !== site.host) continue;\n    if (skipDomains.some((d) => host === d || host.endsWith('.' + d))) continue;\n\n    addLink(link, pageUrl);\n  }\n}\n\nreturn [...linkMap.entries()].map(([url, foundOn]) => ({\n  json: { url, foundOn: [...foundOn] },\n}));"
+        "jsCode": "// Pull every <a href> out of each page, resolve to absolute URLs and deduplicate.\n// URL handling is plain JS because the Code node sandbox has no URL class.\nconst config = $('Config').first().json;\nconst pages = $('Collect Pages').all();\nconst responses = $input.all();\n\nconst parseUrl = (url) => {\n  const m = String(url).trim().match(/^(https?):\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?/i);\n  if (!m) return null;\n  return { protocol: m[1].toLowerCase(), host: m[2].toLowerCase(), path: m[3] || '/', query: m[4] || '' };\n};\n\nconst normalizePath = (path) => {\n  const out = [];\n  for (const seg of path.split('/')) {\n    if (seg === '.') continue;\n    if (seg === '..') { if (out.length > 1) out.pop(); continue; }\n    out.push(seg);\n  }\n  return out.join('/') || '/';\n};\n\nconst resolveHref = (href, page) => {\n  let abs;\n  if (/^https?:\\/\\//i.test(href)) abs = href;\n  else if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null; // mailto:, tel:, javascript:, ...\n  else if (href.startsWith('//')) abs = page.protocol + ':' + href;\n  else if (href.startsWith('/')) abs = page.protocol + '://' + page.host + href;\n  else if (href.startsWith('?')) abs = page.protocol + '://' + page.host + page.path + href;\n  else {\n    const dir = page.path.slice(0, page.path.lastIndexOf('/') + 1) || '/';\n    abs = page.protocol + '://' + page.host + dir + href;\n  }\n  const parsed = parseUrl(abs);\n  if (!parsed) return null;\n  return parsed.protocol + '://' + parsed.host + normalizePath(parsed.path) + parsed.query;\n};\n\nconst skipDomains = String(config.skipDomains || '')\n  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);\n\nconst linkMap = new Map(); // url -> { pages, sites }\n\nconst addLink = (url, foundOn, site) => {\n  if (!linkMap.has(url)) linkMap.set(url, { pages: new Set(), sites: new Set() });\n  linkMap.get(url).pages.add(foundOn);\n  linkMap.get(url).sites.add(site);\n};\n\nfor (let i = 0; i < responses.length; i++) {\n  const pageUrl = pages[i].json.url;\n  const pageSite = pages[i].json.site;\n  const res = responses[i].json;\n\n  const html = typeof res.data === 'string' ? res.data : (typeof res.body === 'string' ? res.body : null);\n\n  // The page itself did not load - queue it so the checker confirms and reports it\n  if (res.error || html === null || (res.statusCode && res.statusCode >= 400)) {\n    addLink(pageUrl, '(page listed in sitemap)', pageSite);\n    continue;\n  }\n\n  const page = parseUrl(pageUrl);\n  if (!page) continue;\n  const siteHost = (parseUrl(pageSite) || page).host;\n\n  for (const m of html.matchAll(/<a\\s[^>]*href\\s*=\\s*[\"']([^\"']+)[\"']/gi)) {\n    const href = m[1].replace(/&amp;/g, '&').trim().split('#')[0];\n    if (!href) continue;\n\n    const link = resolveHref(href, page);\n    if (!link) continue;\n\n    const host = parseUrl(link).host;\n    if (!config.checkExternalLinks && host !== siteHost) continue;\n    if (skipDomains.some((d) => host === d || host.endsWith('.' + d))) continue;\n\n    addLink(link, pageUrl, pageSite);\n  }\n}\n\nreturn [...linkMap.entries()].map(([url, entry]) => ({\n  json: { url, foundOn: [...entry.pages], sites: [...entry.sites] },\n}));"
       },
       "id": "6fb2b173-4062-4daf-b184-2344d6a073b1",
       "name": "Extract Links",
@@ -345,7 +355,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Decide per link: ok, broken, or needs a GET retry.\n// Many servers reject HEAD (403/405/999) even though the page exists,\n// so anything that is not a clean 2xx/3xx or a definite 404/410 gets rechecked.\nconst links = $('Extract Links').all();\nconst results = $input.all();\nconst out = [];\n\nfor (let i = 0; i < results.length; i++) {\n  const link = links[i].json;\n  const res = results[i].json;\n  const status = res.error ? 0 : (res.statusCode || 0);\n\n  let verdict;\n  if (status >= 200 && status < 400) verdict = 'ok';\n  else if (status === 404 || status === 410) verdict = 'broken';\n  else verdict = 'retry';\n\n  out.push({ json: { url: link.url, foundOn: link.foundOn, status, verdict } });\n}\n\nreturn out;"
+        "jsCode": "// Decide per link: ok, broken, or needs a GET retry.\n// Many servers reject HEAD (403/405/999) even though the page exists,\n// so anything that is not a clean 2xx/3xx or a definite 404/410 gets rechecked.\nconst links = $('Extract Links').all();\nconst results = $input.all();\nconst out = [];\n\nfor (let i = 0; i < results.length; i++) {\n  const link = links[i].json;\n  const res = results[i].json;\n  const status = res.error ? 0 : (res.statusCode || 0);\n\n  let verdict;\n  if (status >= 200 && status < 400) verdict = 'ok';\n  else if (status === 404 || status === 410) verdict = 'broken';\n  else verdict = 'retry';\n\n  out.push({ json: { url: link.url, foundOn: link.foundOn, sites: link.sites, status, verdict } });\n}\n\nreturn out;"
       },
       "id": "81d4d395-6284-4fc1-d3a6-4566f8c295d3",
       "name": "Triage HEAD Results",
@@ -421,7 +431,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Final verdict for links that were inconclusive over HEAD.\nconst retried = $('Needs GET Retry?').all(0); // items from the \"true\" branch\nconst results = $input.all();\nconst out = [];\n\nfor (let i = 0; i < results.length; i++) {\n  const link = retried[i].json;\n  const res = results[i].json;\n  const status = res.error ? 0 : (res.statusCode || 0);\n  const ok = status >= 200 && status < 400;\n\n  out.push({ json: { url: link.url, foundOn: link.foundOn, status, verdict: ok ? 'ok' : 'broken' } });\n}\n\nreturn out;"
+        "jsCode": "// Final verdict for links that were inconclusive over HEAD.\nconst retried = $('Needs GET Retry?').all(0); // items from the \"true\" branch\nconst results = $input.all();\nconst out = [];\n\nfor (let i = 0; i < results.length; i++) {\n  const link = retried[i].json;\n  const res = results[i].json;\n  const status = res.error ? 0 : (res.statusCode || 0);\n  const ok = status >= 200 && status < 400;\n\n  out.push({ json: { url: link.url, foundOn: link.foundOn, sites: link.sites, status, verdict: ok ? 'ok' : 'broken' } });\n}\n\nreturn out;"
       },
       "id": "c51887d9-a6c8-4305-97ea-8900ac06d917",
       "name": "Finalize GET Results",
@@ -439,7 +449,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Summarise results into a single report item.\nconst config = $('Config').first().json;\nconst all = $input.all().map((i) => i.json);\nconst broken = all\n  .filter((l) => l.verdict === 'broken')\n  .sort((a, b) => a.url.localeCompare(b.url));\n\nconst lines = broken.map((l) => {\n  const status = l.status === 0 ? 'unreachable (DNS error or timeout)' : `HTTP ${l.status}`;\n  return `- ${l.url}\\n  ${status} | found on: ${l.foundOn.join(', ')}`;\n});\n\nconst report = [\n  `Link check for ${config.siteUrl}`,\n  `Checked ${all.length} unique links, found ${broken.length} broken.`,\n  '',\n  ...lines,\n].join('\\n');\n\nreturn [{\n  json: {\n    siteUrl: config.siteUrl,\n    checkedAt: new Date().toISOString(),\n    totalLinks: all.length,\n    brokenCount: broken.length,\n    broken,\n    report,\n  },\n}];"
+        "jsCode": "// Summarise results into a single report item, grouped by site.\nconst all = $input.all().map((i) => i.json);\nconst broken = all.filter((l) => l.verdict === 'broken');\nconst sites = [...new Set(all.flatMap((l) => l.sites || []))].sort();\n\nconst lines = [];\nfor (const site of sites) {\n  const siteLinks = all.filter((l) => (l.sites || []).includes(site));\n  const siteBroken = siteLinks\n    .filter((l) => l.verdict === 'broken')\n    .sort((a, b) => a.url.localeCompare(b.url));\n  lines.push(`${site} - checked ${siteLinks.length} links, ${siteBroken.length} broken`);\n  for (const l of siteBroken) {\n    const status = l.status === 0 ? 'unreachable (DNS error or timeout)' : `HTTP ${l.status}`;\n    lines.push(`- ${l.url}`);\n    lines.push(`  ${status} | found on: ${l.foundOn.join(', ')}`);\n  }\n  lines.push('');\n}\n\nconst report = [\n  `Link check for ${sites.length} site(s)`,\n  `Checked ${all.length} unique links, found ${broken.length} broken.`,\n  '',\n  ...lines,\n].join('\\n').trim();\n\nreturn [{\n  json: {\n    sites,\n    siteCount: sites.length,\n    checkedAt: new Date().toISOString(),\n    totalLinks: all.length,\n    brokenCount: broken.length,\n    broken,\n    report,\n  },\n}];"
       },
       "id": "e73a39fb-c8ea-4527-b90c-0122ce28fb39",
       "name": "Build Report",
@@ -481,7 +491,7 @@
       "parameters": {
         "fromEmail": "n8n@example.com",
         "toEmail": "you@example.com",
-        "subject": "=Link check: {{ $json.brokenCount }} broken link(s) on {{ $json.siteUrl }}",
+        "subject": "=Link check: {{ $json.brokenCount }} broken link(s) across {{ $json.siteCount }} site(s)",
         "emailFormat": "text",
         "text": "={{ $json.report }}",
         "options": {}
@@ -518,6 +528,17 @@
       ]
     },
     "Config": {
+      "main": [
+        [
+          {
+            "node": "Split Sites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Sites": {
       "main": [
         [
           {

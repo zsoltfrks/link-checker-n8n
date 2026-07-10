@@ -3,10 +3,11 @@
 [![n8n](https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-Point it at a site and it crawls the sitemap, checks every unique link it finds, and reports the broken ones — including which pages they appear on, so you know exactly what to fix.
+Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones — grouped per site and including which pages they appear on, so you know exactly what to fix.
 
 ## Features
 
+- **Multi-site** — check any number of websites in one run, results grouped per site
 - **Sitemap-driven crawling** — follows sitemap indexes (WordPress and friends) one level deep, and falls back to the homepage when no sitemap exists
 - **Few false positives** — fast `HEAD` checks first, with an automatic `GET` retry for servers that reject `HEAD` (403/405/999)
 - **Actionable reports** — every broken link with its HTTP status and the pages it was found on
@@ -26,13 +27,16 @@ The workflow discovers pages through `sitemap.xml`, fetches each one, extracts a
 A run produces a report like this (see the **Build Report** node output):
 
 ```
-Link check for https://example.com
+Link check for 2 site(s)
 Checked 142 unique links, found 2 broken.
 
+https://example.com - checked 97 links, 1 broken
 - https://example.com/old-blog-post
   HTTP 404 | found on: https://example.com/blog, https://example.com/archive
+
+https://example.org - checked 45 links, 1 broken
 - https://gone-domain.example
-  unreachable (DNS error or timeout) | found on: https://example.com/links
+  unreachable (DNS error or timeout) | found on: https://example.org/links
 ```
 
 ## Getting started
@@ -68,7 +72,7 @@ All data is persisted in the `n8n_data` volume, and the timezone in the compose 
 
    | Field                | Default               | Description                                                |
    | -------------------- | --------------------- | ---------------------------------------------------------- |
-   | `siteUrl`            | `https://example.com` | The website to check                                       |
+   | `siteUrls`           | `https://example.com, https://example.org` | One or more websites to check, separated by commas or new lines |
    | `checkExternalLinks` | `true`                | Also check links pointing to other domains                 |
    | `maxPages`           | `50`                  | Cap on how many pages are crawled per run                  |
    | `skipDomains`        | _(empty)_             | Comma-separated domains to skip, e.g. `linkedin.com,x.com` |
