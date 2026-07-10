@@ -11,6 +11,18 @@
 
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones grouped per site and including which pages they appear on, so you know exactly what to fix.
 
+## Table of contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Getting started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Run n8n with Docker (optional)](#run-n8n-with-docker-optional)
+  - [Import and configure the workflow](#import-and-configure-the-workflow)
+  - [Get notified](#get-notified)
+- [Standalone Python script](#standalone-python-script)
+- [Limitations](#limitations)
+
 ## Features
 
 - **Multi-site** — check any number of websites in one run, results grouped per site
@@ -19,30 +31,6 @@ Point it at one or more sites and it crawls their sitemaps, checks every unique 
 - **Actionable reports** — every broken link with its HTTP status and the pages it was found on
 - **Zero dependencies** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
 - **Ready to schedule** — comes with a daily trigger, just activate the workflow
-
-## Getting started
-
-### Import and configure the workflow
-
-1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json)
-2. Open the **Config** node and set your values:
-
-   | Field                | Default               | Description                                                |
-   | -------------------- | --------------------- | ---------------------------------------------------------- |
-   | `siteUrl`            | `https://example.com` | The website to check                                       |
-   | `checkExternalLinks` | `true`                | Also check links pointing to other domains                 |
-   | `maxPages`           | `50`                  | Cap on how many pages are crawled per run                  |
-   | `skipDomains`        | _(empty)_             | Comma-separated domains to skip, e.g. `linkedin.com,x.com` |
-
-3. Click **Execute workflow** and inspect the output of the **Build Report** node.
-4. **Activate** the workflow to run the daily 7:00 check automatically.
-
-### Get notified
-
-The **Send Email Report** node ships disabled so the workflow runs without credentials. Add SMTP credentials, set the from/to addresses and enable it — or swap it for a Slack, Discord or Telegram node.
-
-> [!TIP]
-> The report is available as `{{ $json.report }}` (plain text) and `{{ $json.broken }}` (a structured array with `url`, `status` and `foundOn`), so any notification node can be wired in with two clicks.
 
 ## How it works
 
