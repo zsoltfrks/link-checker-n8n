@@ -162,16 +162,15 @@ def extract_links(
     workers: int,
 ) -> dict[str, set[str]]:
     """Fetch the given pages and collect every checkable link on them.
-
-    Relative hrefs are resolved against their page, fragments are
+    Relative hrefs are resolved against their page, and fragments are
     stripped, and non-http(s) schemes are ignored. A page that fails to
-    load is itself queued as a link so it shows up in the final report.
+    load is itself queued as a link, so it shows up in the final report.
 
     Args:
         site: Site root URL the pages belong to (defines "internal").
         pages: Page URLs to scan.
         check_external: When False, links whose host differs from the
-            site's host are skipped.
+            site's host is skipped.
         skip_domains: Lowercase domains to skip (exact or subdomain match).
         workers: Number of concurrent page fetches.
 
