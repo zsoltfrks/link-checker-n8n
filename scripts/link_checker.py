@@ -1,14 +1,6 @@
-#!/usr/bin/env python3
-"""Standalone dead-link checker.
+"""Link Health Checker.
 
-A dependency-free Python port of the n8n workflow in this repo
-(dead-link-checker.json): it discovers pages through sitemap.xml
-(following sitemap indexes one level deep, falling back to the
-homepage), extracts every <a href> link, verifies each one with a
-HEAD request first and a GET retry for servers that reject HEAD,
-then prints a per-site report of the broken links.
-
-Handy for CI or cron where an n8n instance is overkill:
+Usage examples:
 
     python scripts/link_checker.py https://example.com https://example.org
     python scripts/link_checker.py https://example.com --internal-only --max-pages 20
@@ -57,8 +49,8 @@ def encode_url(url: str) -> str:
         The URL with its host IDNA-encoded (best effort) and its path and
         query percent-encoded.
     """
-    parts = urllib.parse.urlsplit(url)
-    netloc = parts.netloc
+    parsed_url = urllib.parse.urlsplit(url)
+    netloc = parsed_url.netloc
     if not netloc.isascii():
         host, sep, port = netloc.partition(":")
         try:
@@ -66,10 +58,10 @@ def encode_url(url: str) -> str:
         except UnicodeError:
             pass  # leave as-is; the fetch will fail and report status 0
     return urllib.parse.urlunsplit(
-        parts._replace(
+        parsed_url._replace(
             netloc=netloc,
-            path=urllib.parse.quote(parts.path, safe=URL_SAFE),
-            query=urllib.parse.quote(parts.query, safe=URL_SAFE),
+            path=urllib.parse.quote(parsed_url.path, safe=URL_SAFE),
+            query=urllib.parse.quote(parsed_url.query, safe=URL_SAFE),
         )
     )
 
@@ -100,18 +92,19 @@ def fetch(
         unparseable URL). ``body`` is ``""`` unless a body was requested
         and received.
     """
-    request = urllib.request.Request(
+    http_req = urllib.request.Request(
         encode_url(url), method=method, headers={"User-Agent": USER_AGENT}
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(http_req, timeout=timeout) as response:
             if not read_body or method == "HEAD":
                 return response.status, ""
-            return response.status, response.read(MAX_BODY_BYTES).decode("utf-8", "replace")
+            body = response.read(MAX_BODY_BYTES).decode("utf-8", "replace")
+            return response.status, body
     except urllib.error.HTTPError as error:
         error.close()
         return error.code, ""
-    except Exception:
+    except urllib.error.URLError:
         return 0, ""
 
 
@@ -120,16 +113,16 @@ def _ok(status: int) -> bool:
     return 200 <= status < 400
 
 
-def _locs(xml: str) -> list[str]:
+def _locs(sitemap_xml: str) -> list[str]:
     """Extract and entity-decode all ``<loc>`` values from sitemap XML.
 
     Args:
-        xml: Raw sitemap or sitemap-index XML.
+        sitemap_xml: Raw sitemap or sitemap-index XML.
 
     Returns:
         The decoded URLs, in document order.
     """
-    return [unescape(loc) for loc in LOC_RE.findall(xml)]
+    return [unescape(loc) for loc in LOC_RE.findall(sitemap_xml)]
 
 
 def discover_pages(site: str, max_pages: int) -> list[str]:
@@ -147,18 +140,18 @@ def discover_pages(site: str, max_pages: int) -> list[str]:
     Returns:
         Deduplicated, fragment-stripped page URLs, capped at ``max_pages``.
     """
-    status, xml = fetch(site + "/sitemap.xml")
-    locs = _locs(xml) if status == 200 else []
+    sitemap_status, sitemap_xml = fetch(site + "/sitemap.xml")
+    locs = _locs(sitemap_xml) if sitemap_status == 200 else []
 
     pages = [loc for loc in locs if not XML_RE.search(loc)]
     for child_sitemap in (loc for loc in locs if XML_RE.search(loc)):
-        child_status, child_xml = fetch(child_sitemap)
-        if child_status == 200:
-            pages += [loc for loc in _locs(child_xml) if not XML_RE.search(loc)]
+        sub_status, sub_xml = fetch(child_sitemap)
+        if sub_status == 200:
+            pages += [loc for loc in _locs(sub_xml) if not XML_RE.search(loc)]
 
     pages = pages or [site]  # no sitemap -> at least check the homepage
-    unique = list(dict.fromkeys(page.split("#")[0] for page in pages))
-    return unique[:max_pages]
+    unique_pages = list(dict.fromkeys(page.split("#")[0] for page in pages))
+    return unique_pages[:max_pages]
 
 
 def extract_links(
@@ -188,32 +181,33 @@ def extract_links(
     site_host = urllib.parse.urlsplit(site).netloc.lower()
     links: dict[str, set[str]] = {}
 
-    def add(url: str, found_on: str) -> None:
-        links.setdefault(url, set()).add(found_on)
-
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = list(pool.map(fetch, pages))
+        page_responses = list(pool.map(fetch, pages))
 
-    for page, (status, html) in zip(pages, results):
+    for page, (status, html) in zip(pages, page_responses):
         if not _ok(status) or not html:
             # The page itself did not load - queue it so it shows up in the report
-            add(page, "(page listed in sitemap)")
+            links.setdefault(page, set()).add("(page listed in sitemap)")
             continue
 
         for href in HREF_RE.findall(html):
             href = unescape(href).strip()
-            if not href or href.startswith("#") or href.lower().startswith(SKIPPED_SCHEMES):
+            if (not href or href.startswith("#")
+                    or href.lower().startswith(SKIPPED_SCHEMES)):
                 continue
             absolute = urllib.parse.urldefrag(urllib.parse.urljoin(page, href)).url
-            parts = urllib.parse.urlsplit(absolute)
-            if parts.scheme not in ("http", "https"):
+            parsed_url = urllib.parse.urlsplit(absolute)
+            if parsed_url.scheme not in ("http", "https"):
                 continue
-            host = parts.netloc.lower()
+            host = parsed_url.netloc.lower()
             if not check_external and host != site_host:
                 continue
-            if any(host == domain or host.endswith("." + domain) for domain in skip_domains):
+            if any(
+                host == domain or host.endswith("." + domain)
+                for domain in skip_domains
+            ):
                 continue
-            add(absolute, page)
+            links.setdefault(absolute, set()).add(page)
 
     return links
 
@@ -255,7 +249,7 @@ def build_report(
     Returns:
         The complete report, ready to print.
     """
-    lines = [
+    report_lines = [
         f"Link check for {len(sites)} site(s)",
         f"Checked {len(all_links)} unique links, found {len(broken)} broken.",
         "",
@@ -263,13 +257,19 @@ def build_report(
     for site in sorted(sites):
         site_urls = [url for url, entry in all_links.items() if site in entry["sites"]]
         site_broken = sorted(url for url in site_urls if url in broken)
-        lines.append(f"{site} - checked {len(site_urls)} links, {len(site_broken)} broken")
+        report_lines.append(
+            f"{site} - checked {len(site_urls)} links, {len(site_broken)} broken"
+        )
         for url in site_broken:
-            reason = "unreachable (DNS error or timeout)" if broken[url] == 0 else f"HTTP {broken[url]}"
-            lines.append(f"- {url}")
-            lines.append(f"  {reason} | found on: {', '.join(sorted(all_links[url]['pages']))}")
-        lines.append("")
-    return "\n".join(lines).strip()
+            if broken[url] == 0:
+                reason = "unreachable (DNS error or timeout)"
+            else:
+                reason = f"HTTP {broken[url]}"
+            pages_str = ", ".join(sorted(all_links[url]["pages"]))
+            report_lines.append(f"- {url}")
+            report_lines.append(f"  {reason} | found on: {pages_str}")
+        report_lines.append("")
+    return "\n".join(report_lines).strip()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -284,13 +284,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description="Check one or more websites for dead links.",
-        epilog="Example: python link_checker.py https://example.com --skip-domains linkedin.com,x.com",
+        epilog=(
+            "Example: python link_checker.py https://example.com"
+            " --skip-domains linkedin.com,x.com"
+        ),
     )
-    parser.add_argument("sites", nargs="+", help="site URLs to check, e.g. https://example.com")
-    parser.add_argument("--max-pages", type=int, default=50, help="pages crawled per site (default: 50)")
-    parser.add_argument("--internal-only", action="store_true", help="skip links pointing to other domains")
-    parser.add_argument("--skip-domains", default="", help="comma-separated domains to skip, e.g. linkedin.com,x.com")
-    parser.add_argument("--workers", type=int, default=10, help="concurrent requests (default: 10)")
+    parser.add_argument(
+        "sites", nargs="+", help="site URLs to check, e.g. https://example.com"
+    )
+    parser.add_argument(
+        "--max-pages", type=int, default=50,
+        help="pages crawled per site (default: 50)",
+    )
+    parser.add_argument(
+        "--internal-only", action="store_true",
+        help="skip links pointing to other domains",
+    )
+    parser.add_argument(
+        "--skip-domains", default="",
+        help="comma-separated domains to skip, e.g. linkedin.com,x.com",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=10,
+        help="concurrent requests (default: 10)",
+    )
     args = parser.parse_args(argv)
 
     if args.max_pages < 1:
@@ -302,7 +319,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     for site in args.sites:
         if not re.match(r"^https?://", site, re.IGNORECASE):
             parser.error(f"site URLs must start with http:// or https:// (got: {site})")
-    args.skip_domains = [d.strip().lower() for d in args.skip_domains.split(",") if d.strip()]
+    args.skip_domains = [
+        d.strip().lower() for d in args.skip_domains.split(",") if d.strip()
+    ]
     return args
 
 
@@ -312,14 +331,14 @@ def main() -> int:
     Returns:
         Process exit code: ``1`` when broken links were found, else ``0``.
     """
-    # Never let an exotic URL crash the report on a legacy Windows code page.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
 
     args = parse_args()
 
-    all_links: dict[str, dict[str, set[str]]] = {}  # url -> {"pages": ..., "sites": ...}
+    # url -> {"pages": set(), "sites": set()}
+    all_links: dict[str, dict[str, set[str]]] = {}
     for site in args.sites:
         pages = discover_pages(site, args.max_pages)
         print(f"{site}: crawling {len(pages)} page(s)...", file=sys.stderr)
@@ -327,9 +346,9 @@ def main() -> int:
             site, pages, not args.internal_only, args.skip_domains, args.workers
         )
         for url, found_on in site_links.items():
-            entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
-            entry["pages"] |= found_on
-            entry["sites"].add(site)
+            link_entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
+            link_entry["pages"] |= found_on
+            link_entry["sites"].add(site)
 
     print(f"checking {len(all_links)} unique link(s)...", file=sys.stderr)
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
