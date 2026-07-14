@@ -1,13 +1,18 @@
 <div align="center">
 
-# Link Health Checker N8N
+# Link Health Checker
 
-<a href="https://n8n.io"><img src="https://img.shields.io/badge/n8n-1.x-EA4B71?logo=n8n&logoColor=white" alt="n8n"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?" alt="License"></a>
-<img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg?" alt="Maintained">
-<img src="https://img.shields.io/badge/PRs-welcome-green.svg?" alt="PRs Welcome">
+<a href="https://n8n.io"><img src="https://img.shields.io/badge/n8n-1.x-2b2b2b?logo=n8n&logoColor=white" alt="n8n"></a>
+<a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.9%2B-2b2b2b?logo=python&logoColor=white" alt="Python 3.9+"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-2b2b2b.svg?" alt="License"></a>
+<img src="https://img.shields.io/badge/Maintained%3F-Yes!-2b2b2b.svg?" alt="Maintained">
+<img src="https://img.shields.io/badge/PRs%3F-Welcome!-2b2b2b.svg?" alt="PRs Welcome">
 
 </div>
+
+<p align="center">
+  <img src="scripts/demo.gif" alt="link_checker.py crawling a site and printing its link-check report" width="800">
+</p>
 
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones grouped per site and including which pages they appear on, so you know exactly what to fix.
 
@@ -115,6 +120,8 @@ python scripts/link_checker.py https://example.com --internal-only --max-pages 2
 ```
 
 It prints the same per-site report and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
+
+The demo GIF at the top of this README is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) — the regeneration command is in the tape file's header. (`docs/demo-site` is a tiny fixture site with two deliberately dead links, handy for demoing or testing the checker against `http://localhost:8000` via `python -m http.server 8000 --directory docs/demo-site`.)
 
 ## Limitations
 
