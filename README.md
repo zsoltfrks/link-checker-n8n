@@ -11,7 +11,7 @@
 </div>
 
 <p align="center">
-  <img src="scripts/demo.gif" alt="link_checker.py crawling a site and printing its link-check report" width="800">
+  <img src="scripts/demo.gif" alt="Link Health Checker crawling a site and printing its report" width="800">
 </p>
 
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones grouped per site and including which pages they appear on, so you know exactly what to fix.
@@ -80,7 +80,7 @@ docker compose up -d
 Open <http://localhost:5678>, create the owner account, and import the workflow straight from the CLI:
 
 ```bash
-docker compose exec n8n n8n import:workflow --input=/workflows/dead-link-checker.json
+docker compose exec n8n n8n import:workflow --input=/workflows/link-health-checker.json
 ```
 
 All data is persisted in the `n8n_data` volume, and the timezone in the compose file controls when the daily schedule fires.
@@ -90,7 +90,7 @@ All data is persisted in the `n8n_data` volume, and the timezone in the compose 
 
 ### Import and configure the workflow
 
-1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`dead-link-checker.json`](dead-link-checker.json) (skip if you imported via the CLI above).
+1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`link-health-checker.json`](link-health-checker.json) (skip if you imported via the CLI above).
 2. Open the **Config** node and set your values:
 
    | Field                | Default                                    | Description                                                     |
@@ -112,11 +112,11 @@ The **Send Email Report** node ships disabled so the workflow runs without crede
 
 ## Standalone Python script
 
-Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/link_checker.py`](scripts/link_checker.py) is a dependency-free port of the workflow (Python 3.9+, standard library only):
+Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/link_health_checker.py`](scripts/link_health_checker.py) is a dependency-free port of the workflow (Python 3.9+, standard library only):
 
 ```bash
-python scripts/link_checker.py https://example.com https://example.org
-python scripts/link_checker.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
+python scripts/link_health_checker.py https://example.com https://example.org
+python scripts/link_health_checker.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
 ```
 
 It prints the same style of per-site report — plus a grand total of every link found during the crawl — and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.

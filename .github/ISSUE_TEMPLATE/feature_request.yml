@@ -8,8 +8,8 @@ body:
       label: Component
       description: Which part of the project would this improve?
       options:
-        - n8n workflow (dead-link-checker.json)
-        - Python script (scripts/link_checker.py)
+        - n8n workflow (link-health-checker.json)
+        - Python script (scripts/link_health_checker.py)
         - Docker setup (docker-compose.yml)
         - Documentation / other
 

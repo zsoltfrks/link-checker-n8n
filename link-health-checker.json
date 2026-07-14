@@ -1,9 +1,9 @@
 {
-  "name": "Website Dead Link Checker",
+  "name": "Link Health Checker",
   "nodes": [
     {
       "parameters": {
-        "content": "## Dead Link Checker\n\n**Quick start**\n1. Open the **Config** node and set `siteUrls` (one or more, comma separated)\n2. Click *Execute workflow*\n3. Check the **Build Report** node output\n\n**How it works**\nsitemap.xml → pages → collect links → HEAD check → GET retry for stubborn servers → report.\n\nActivate the workflow to run the daily schedule.",
+        "content": "## Link Health Checker\n\n**Quick start**\n1. Open the **Config** node and set `siteUrls` (one or more, comma separated)\n2. Click *Execute workflow*\n3. Check the **Build Report** node output\n\n**How it works**\nsitemap.xml → pages → collect links → HEAD check → GET retry for stubborn servers → report.\n\nActivate the workflow to run the daily schedule.",
         "width": 320,
         "height": 500
       },
@@ -144,7 +144,7 @@
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+              "value": "Mozilla/5.0 (compatible; n8n-link-health-checker/1.0)"
             }
           ]
         },
@@ -214,7 +214,7 @@
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+              "value": "Mozilla/5.0 (compatible; n8n-link-health-checker/1.0)"
             }
           ]
         },
@@ -278,7 +278,7 @@
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+              "value": "Mozilla/5.0 (compatible; n8n-link-health-checker/1.0)"
             }
           ]
         },
@@ -325,7 +325,7 @@
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+              "value": "Mozilla/5.0 (compatible; n8n-link-health-checker/1.0)"
             }
           ]
         },
@@ -401,7 +401,7 @@
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "Mozilla/5.0 (compatible; n8n-dead-link-checker/1.0)"
+              "value": "Mozilla/5.0 (compatible; n8n-link-health-checker/1.0)"
             }
           ]
         },

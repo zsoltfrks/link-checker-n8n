@@ -2,8 +2,8 @@
 
 Usage examples:
 
-    python scripts/link_checker.py https://example.com https://example.org
-    python scripts/link_checker.py https://example.com --internal-only --max-pages 20
+    python scripts/link_health_checker.py https://example.com https://example.org
+    python scripts/link_health_checker.py https://example.com --internal-only --max-pages 20
 
 Exits with code 1 if any broken link is found, 0 otherwise.
 """
@@ -20,7 +20,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 
-USER_AGENT = "Mozilla/5.0 (compatible; dead-link-checker/1.0)"
+USER_AGENT = "Mozilla/5.0 (compatible; link-health-checker/1.0)"
 MAX_BODY_BYTES = 2_000_000  # plenty for HTML pages and sitemaps
 HEAD_TIMEOUT = 10
 GET_TIMEOUT = 15
@@ -294,7 +294,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check one or more websites for dead links.",
         epilog=(
-            "Example: python link_checker.py https://example.com"
+            "Example: python link_health_checker.py https://example.com"
             " --skip-domains linkedin.com,x.com"
         ),
     )
