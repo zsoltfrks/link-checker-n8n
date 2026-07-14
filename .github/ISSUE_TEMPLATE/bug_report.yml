@@ -1,0 +1,70 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! A few details make it much easier to reproduce and fix.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the project is affected?
+      options:
+        - n8n workflow (dead-link-checker.json)
+        - Python script (scripts/link_checker.py)
+        - Docker setup (docker-compose.yml)
+        - Documentation / other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        I ran the checker against my site and expected ... but got ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: >
+        The exact command you ran (for the script) or your Config node values
+        (for the workflow). Feel free to redact private site URLs.
+      placeholder: python scripts/link_checker.py https://example.com --max-pages 20
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or traceback
+      description: Paste the relevant output, error message, or traceback. Rendered as code automatically.
+      render: text
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, and Python version (`python --version`) or n8n version, plus how you run it (self-hosted, Docker, n8n Cloud).
+      placeholder: |
+        OS: Windows 11
+        Python: 3.13.1
+        n8n: 1.85 (Docker)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this hasn't been reported yet
+          required: true
+        - label: The link reported as broken is NOT on a bot-blocking site (LinkedIn, X/Twitter, some CDNs) — see the Limitations section of the README
