@@ -11,6 +11,7 @@ Exits with code 1 if any broken link is found, 0 otherwise.
 from __future__ import annotations
 
 import argparse
+import http.client
 import re
 import sys
 import urllib.error
@@ -104,7 +105,7 @@ def fetch(
     except urllib.error.HTTPError as error:
         error.close()
         return error.code, ""
-    except urllib.error.URLError:
+    except (OSError, http.client.HTTPException, ValueError):
         return 0, ""
 
 
