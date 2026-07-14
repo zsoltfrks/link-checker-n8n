@@ -15,7 +15,7 @@ Set TypingSpeed 40ms
 Set Theme "Dracula"
 
 Sleep 500ms
-Type "python scripts/link_health_checker.py https://zsoltfrks.xyz --skip-domains linkedin.com"
+Type "python scripts/main.py https://zsoltfrks.xyz --skip-domains linkedin.com"
 Sleep 500ms
 Enter
 Wait+Screen@60s /Link check for/

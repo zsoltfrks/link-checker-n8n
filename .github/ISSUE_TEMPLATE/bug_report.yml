@@ -14,7 +14,7 @@ body:
       description: Which part of the project is affected?
       options:
         - n8n workflow (link-health-checker.json)
-        - Python script (scripts/link_health_checker.py)
+        - Python script (scripts/main.py)
         - Docker setup (docker-compose.yml)
         - Documentation / other
     validations:
@@ -37,7 +37,7 @@ body:
       description: >
         The exact command you ran (for the script) or your Config node values
         (for the workflow). Feel free to redact private site URLs.
-      placeholder: python scripts/link_health_checker.py https://example.com --max-pages 20
+      placeholder: python scripts/main.py https://example.com --max-pages 20
     validations:
       required: true
 

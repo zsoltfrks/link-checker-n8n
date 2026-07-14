@@ -9,7 +9,7 @@ body:
       description: Which part of the project would this improve?
       options:
         - n8n workflow (link-health-checker.json)
-        - Python script (scripts/link_health_checker.py)
+        - Python script (scripts/main.py)
         - Docker setup (docker-compose.yml)
         - Documentation / other
 

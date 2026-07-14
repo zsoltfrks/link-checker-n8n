@@ -2,8 +2,8 @@
 
 Usage examples:
 
-    python scripts/link_health_checker.py https://example.com https://example.org
-    python scripts/link_health_checker.py https://example.com --internal-only --max-pages 20
+    python scripts/main.py https://example.com https://example.org
+    python scripts/main.py https://example.com --internal-only --max-pages 20
 
 Exits with code 1 if any broken link is found, 0 otherwise.
 """
@@ -294,7 +294,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check one or more websites for dead links.",
         epilog=(
-            "Example: python link_health_checker.py https://example.com"
+            "Example: python scripts/main.py https://example.com"
             " --skip-domains linkedin.com,x.com"
         ),
     )

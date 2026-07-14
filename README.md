@@ -112,11 +112,11 @@ The **Send Email Report** node ships disabled so the workflow runs without crede
 
 ## Standalone Python script
 
-Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/link_health_checker.py`](scripts/link_health_checker.py) is a dependency-free port of the workflow (Python 3.9+, standard library only):
+Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/main.py`](scripts/main.py) is a dependency-free port of the workflow (Python 3.9+, standard library only):
 
 ```bash
-python scripts/link_health_checker.py https://example.com https://example.org
-python scripts/link_health_checker.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
+python scripts/main.py https://example.com https://example.org
+python scripts/main.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
 ```
 
 It prints the same style of per-site report — plus a grand total of every link found during the crawl — and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
