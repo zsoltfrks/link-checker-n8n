@@ -161,7 +161,7 @@ def extract_links(
     check_external: bool,
     skip_domains: list[str],
     workers: int,
-) -> dict[str, set[str]]:
+) -> tuple[dict[str, set[str]], int]:
     """Fetch the given pages and collect every checkable link on them.
     Relative hrefs are resolved against their page, and fragments are
     stripped, and non-http(s) schemes are ignored. A page that fails to
@@ -176,10 +176,15 @@ def extract_links(
         workers: Number of concurrent page fetches.
 
     Returns:
-        Mapping of absolute link URL to the set of pages it was found on.
+        A ``(links, found_total)`` tuple: a mapping of absolute link URL to
+        the set of pages it was found on, and the grand total of link
+        occurrences discovered on the scanned pages — counted before
+        deduplication and before the external/skip-domain filters, so it
+        reflects how many links the site actually contains.
     """
     site_host = urllib.parse.urlsplit(site).netloc.lower()
     links: dict[str, set[str]] = {}
+    found_total = 0
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         page_responses = list(pool.map(fetch, pages))
@@ -199,6 +204,7 @@ def extract_links(
             parsed_url = urllib.parse.urlsplit(absolute)
             if parsed_url.scheme not in ("http", "https"):
                 continue
+            found_total += 1
             host = parsed_url.netloc.lower()
             if not check_external and host != site_host:
                 continue
@@ -209,7 +215,7 @@ def extract_links(
                 continue
             links.setdefault(absolute, set()).add(page)
 
-    return links
+    return links, found_total
 
 
 def check_link(url: str) -> int:
@@ -237,6 +243,7 @@ def build_report(
     sites: list[str],
     all_links: dict[str, dict[str, set[str]]],
     broken: dict[str, int],
+    total_found: int,
 ) -> str:
     """Format the check results as the per-site plain-text report.
 
@@ -245,13 +252,15 @@ def build_report(
         all_links: Mapping of link URL to ``{"pages": ..., "sites": ...}``
             describing where each link was found.
         broken: Mapping of broken link URL to its final status code.
+        total_found: Grand total of link occurrences discovered on the
+            scanned pages, before deduplication and skip filters.
 
     Returns:
         The complete report, ready to print.
     """
     report_lines = [
         f"Link check for {len(sites)} site(s)",
-        f"Checked {len(all_links)} unique links, found {len(broken)} broken.",
+        f"Found {total_found} links in total; checked {len(all_links)} unique, {len(broken)} broken.",
         "",
     ]
     for site in sorted(sites):
@@ -339,12 +348,14 @@ def main() -> int:
 
     # url -> {"pages": set(), "sites": set()}
     all_links: dict[str, dict[str, set[str]]] = {}
+    total_found = 0
     for site in args.sites:
         pages = discover_pages(site, args.max_pages)
         print(f"{site}: crawling {len(pages)} page(s)...", file=sys.stderr)
-        site_links = extract_links(
+        site_links, found_on_site = extract_links(
             site, pages, not args.internal_only, args.skip_domains, args.workers
         )
+        total_found += found_on_site
         for url, found_on in site_links.items():
             link_entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
             link_entry["pages"] |= found_on
@@ -355,7 +366,7 @@ def main() -> int:
         statuses = dict(zip(all_links, pool.map(check_link, all_links)))
     broken = {url: status for url, status in statuses.items() if not _ok(status)}
 
-    print(build_report(args.sites, all_links, broken))
+    print(build_report(args.sites, all_links, broken, total_found))
     return 1 if broken else 0
 
 
