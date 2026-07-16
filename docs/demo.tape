@@ -9,7 +9,7 @@ Output scripts/demo.gif
 Set Shell bash
 Set FontSize 16
 Set Width 950
-Set Height 220
+Set Height 260
 Set Padding 12
 Set TypingSpeed 40ms
 Set Theme "Dracula"

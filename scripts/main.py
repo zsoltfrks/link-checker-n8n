@@ -14,6 +14,7 @@ import argparse
 import http.client
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -244,6 +245,7 @@ def build_report(
     all_links: dict[str, dict[str, set[str]]],
     broken: dict[str, int],
     total_found: int,
+    elapsed_ms: int,
 ) -> str:
     """Format the check results as the per-site plain-text report.
 
@@ -254,13 +256,15 @@ def build_report(
         broken: Mapping of broken link URL to its final status code.
         total_found: Grand total of link occurrences discovered on the
             scanned pages, before deduplication and skip filters.
+        elapsed_ms: Wall-clock duration of the whole run in milliseconds.
 
     Returns:
         The complete report, ready to print.
     """
     report_lines = [
         f"Link check for {len(sites)} site(s)",
-        f"Found {total_found} links in total; checked {len(all_links)} unique, {len(broken)} broken.",
+        f"[SEARCH] Found {total_found} links in total; checked {len(all_links)} unique, {len(broken)} broken.",
+        f"[CRAWL] Completed in {elapsed_ms} ms.",
         "",
     ]
     for site in sorted(sites):
@@ -340,6 +344,8 @@ def main() -> int:
     Returns:
         Process exit code: ``1`` when broken links were found, else ``0``.
     """
+    start_time = time.perf_counter()
+
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
@@ -366,7 +372,8 @@ def main() -> int:
         statuses = dict(zip(all_links, pool.map(check_link, all_links)))
     broken = {url: status for url, status in statuses.items() if not _ok(status)}
 
-    print(build_report(args.sites, all_links, broken, total_found))
+    elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+    print(build_report(args.sites, all_links, broken, total_found, elapsed_ms))
     return 1 if broken else 0
 
 

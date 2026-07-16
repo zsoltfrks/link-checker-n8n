@@ -119,7 +119,7 @@ python scripts/main.py https://example.com https://example.org
 python scripts/main.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
 ```
 
-It prints the same style of per-site report — plus a grand total of every link found during the crawl — and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
+It prints the same style of per-site report — plus a grand total of every link found and the crawl duration in milliseconds — and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
 
 The demo GIF at the top of this README is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) — the regeneration command is in the tape file's header.
 
