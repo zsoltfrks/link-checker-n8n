@@ -262,9 +262,9 @@ def build_report(
         The complete report, ready to print.
     """
     report_lines = [
-        f"Link check for {len(sites)} site(s)",
-        f"[SEARCH] Found {total_found} links in total; checked {len(all_links)} unique, {len(broken)} broken.",
-        f"[CRAWL] Completed in {elapsed_ms} ms.",
+        "",
+        f"Found {total_found} links in total; {len(all_links)} unique, {len(broken)} broken.",
+        f"Crawl completed in {elapsed_ms} ms.",
         "",
     ]
     for site in sorted(sites):
@@ -366,12 +366,11 @@ def main() -> int:
             link_entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
             link_entry["pages"] |= found_on
             link_entry["sites"].add(site)
-
-    print(f"checking {len(all_links)} unique link(s)...", file=sys.stderr)
+    print(f"Checking {len(all_links)} unique link(s)...", file=sys.stderr)
+    print()
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         statuses = dict(zip(all_links, pool.map(check_link, all_links)))
     broken = {url: status for url, status in statuses.items() if not _ok(status)}
-
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
     print(build_report(args.sites, all_links, broken, total_found, elapsed_ms))
     return 1 if broken else 0
