@@ -247,10 +247,15 @@ class PageRenderer:
         try:
             from playwright.async_api import async_playwright
         except ImportError:
+            # Naming the interpreter matters: `py` and `python` are often two
+            # different installs on Windows, and a bare `pip install` easily
+            # lands in the one that is not running this script.
             raise SystemExit(
-                "Rendering needs Playwright. Install it with:\n"
-                "    pip install playwright\n"
-                "    playwright install chromium"
+                "Rendering needs Playwright, which is not installed for the"
+                f" interpreter running this script:\n    {sys.executable}\n\n"
+                "Install it there with:\n"
+                f'    "{sys.executable}" -m pip install playwright\n'
+                f'    "{sys.executable}" -m playwright install chromium'
             )
         self._loop = asyncio.new_event_loop()
         run = self._loop.run_until_complete

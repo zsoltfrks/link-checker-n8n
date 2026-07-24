@@ -138,11 +138,14 @@ python scripts/main.py https://example.com --crawl --max-pages 100
 `--render` loads pages in a headless browser first, so links that only exist after JavaScript runs are found too. It needs [Playwright](https://playwright.dev/python/) — the only optional dependency in this project:
 
 ```bash
-pip install playwright
-playwright install chromium
+python -m pip install playwright
+python -m playwright install chromium
 
 python scripts/main.py https://spa.example --crawl --render
 ```
+
+> [!NOTE]
+> Use the `python -m` form, and the same launcher you run the script with. On Windows `py` and `python` are often two different installations, so a bare `pip install playwright` can easily land in the one that is not running the checker.
 
 | Mode | Behaviour |
 |---|---|
