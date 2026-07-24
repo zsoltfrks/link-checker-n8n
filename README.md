@@ -35,10 +35,10 @@ Point it at one or more sites and it crawls their sitemaps, checks every unique 
 - **Multi-site** — check any number of websites in one run, results grouped per site
 - **Sitemap-driven crawling** — follows sitemap indexes (WordPress and friends) one level deep, and falls back to the homepage when no sitemap exists
 - **Recursive crawl** — or skip sitemaps entirely and let the Python script walk the site from a single URL (`--crawl`)
-- **JavaScript rendering** — optional headless-browser mode finds links that only exist after JS runs (`--render`)
+- **JavaScript rendering** — headless-browser mode finds links that only exist after JS runs (`--render`)
 - **Few false positives** — fast `HEAD` checks first, with an automatic `GET` retry for servers that reject `HEAD` (403/405/999)
 - **Actionable reports** — every broken link with its HTTP status and the pages it was found on
-- **Zero dependencies** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
+- **No-fuss workflow** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
 - **Ready to schedule** — comes with a daily trigger, just activate the workflow
 
 ## How it works
@@ -70,8 +70,22 @@ https://example.org - checked 45 links, 1 broken
 
 ### Prerequisites
 
+For the n8n workflow:
+
 - An [n8n](https://n8n.io) **1.x** instance, self-hosted or on n8n Cloud
 - Or [Docker](https://www.docker.com), to spin one up locally (see below)
+
+For the standalone Python script:
+
+- **Python 3.9+**, then install the dependencies and the headless browser:
+
+  ```bash
+  python -m pip install -r requirements.txt
+  python -m playwright install chromium
+  ```
+
+> [!NOTE]
+> Use the `python -m` form, with the same launcher you run the script with. On Windows `py` and `python` are often two different installations, so a bare `pip install` can easily land in the one that is not running the checker.
 
 ### Run n8n with Docker (optional)
 
@@ -116,7 +130,7 @@ The **Send Email Report** node ships disabled so the workflow runs without crede
 
 ## Standalone Python script
 
-Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/main.py`](scripts/main.py) is a dependency-free port of the workflow (Python 3.9+, standard library only):
+Want the same check without n8n — in CI, a cron job or a git hook? [`scripts/main.py`](scripts/main.py) is a standalone port of the workflow (Python 3.9+, see [Prerequisites](#prerequisites) for the install):
 
 ```bash
 python scripts/main.py https://example.com https://example.org
@@ -135,18 +149,15 @@ python scripts/main.py https://example.com --crawl --max-pages 100
 
 ### Rendering JavaScript pages
 
-`--render` loads pages in a headless browser first, so links that only exist after JavaScript runs are found too. It needs [Playwright](https://playwright.dev/python/) — the only optional dependency in this project:
+`--render` loads pages in a headless browser ([Playwright](https://playwright.dev/python/)) first, so links that only exist after JavaScript runs are found too:
 
 ```bash
-python -m pip install playwright
-python -m playwright install chromium
-
 python scripts/main.py https://spa.example --crawl --render
 ```
 
 | Mode                          | Behaviour                                                                   |
 | ----------------------------- | --------------------------------------------------------------------------- |
-| `--render never` _(default)_  | Plain HTTP only — fastest, zero dependencies                                |
+| `--render never` _(default)_  | Plain HTTP only — fastest, no browser started                               |
 | `--render` or `--render auto` | Plain HTTP first, browser only for pages that come back as empty SPA shells |
 | `--render always`             | Every page goes through the browser                                         |
 

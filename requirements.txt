@@ -1,0 +1,8 @@
+# Dependencies for scripts/main.py
+#
+#   python -m pip install -r requirements.txt
+#   python -m playwright install chromium
+#
+# Playwright ships the headless browser used by --render. The browser
+# itself is not a pip package, so the second command above is required too.
+playwright>=1.40

@@ -25,6 +25,8 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 
+from playwright.async_api import async_playwright
+
 USER_AGENT = "Mozilla/5.0 (compatible; link-health-checker/1.0)"
 MAX_BODY_BYTES = 2_000_000  # plenty for HTML pages and sitemaps
 HEAD_TIMEOUT = 10
@@ -220,10 +222,8 @@ async def _block_heavy_assets(route) -> None:
 class PageRenderer:
     """Loads pages in a headless browser so JavaScript-built links appear.
 
-    One browser instance is launched lazily and reused for every page, and
-    pages render concurrently on a single asyncio loop. Playwright is
-    imported only when rendering is actually requested, which keeps the
-    checker dependency-free by default.
+    One browser instance is launched on the first page and reused for every
+    page after it, and pages render concurrently on a single asyncio loop.
     """
 
     def __init__(self, workers: int, timeout_ms: int = RENDER_TIMEOUT_MS) -> None:
@@ -244,19 +244,6 @@ class PageRenderer:
         """Launch the browser and its shared context, once."""
         if self._browser is not None:
             return
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            # Naming the interpreter matters: `py` and `python` are often two
-            # different installs on Windows, and a bare `pip install` easily
-            # lands in the one that is not running this script.
-            raise SystemExit(
-                "Rendering needs Playwright, which is not installed for the"
-                f" interpreter running this script:\n    {sys.executable}\n\n"
-                "Install it there with:\n"
-                f'    "{sys.executable}" -m pip install playwright\n'
-                f'    "{sys.executable}" -m playwright install chromium'
-            )
         self._loop = asyncio.new_event_loop()
         run = self._loop.run_until_complete
         self._playwright = run(async_playwright().start())
@@ -670,7 +657,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         const="auto", default="never",
         help=(
             "render pages in a headless browser so JavaScript-built links"
-            " are found; bare --render means auto (needs playwright)"
+            " are found; bare --render means auto"
         ),
     )
     args = parser.parse_args(argv)
