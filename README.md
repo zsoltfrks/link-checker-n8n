@@ -11,7 +11,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Link Health Checker crawling a site and printing its report" width="800">
+  <img width="1000" height="700" alt="demo" src="https://github.com/user-attachments/assets/126c1d59-6878-4940-a0ed-71df80db1e33" />
 </p>
 
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones grouped per site and including which pages they appear on, so you know exactly what to fix.
