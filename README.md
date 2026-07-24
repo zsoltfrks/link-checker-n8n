@@ -144,14 +144,11 @@ python -m playwright install chromium
 python scripts/main.py https://spa.example --crawl --render
 ```
 
-> [!NOTE]
-> Use the `python -m` form, and the same launcher you run the script with. On Windows `py` and `python` are often two different installations, so a bare `pip install playwright` can easily land in the one that is not running the checker.
-
-| Mode | Behaviour |
-|---|---|
-| `--render never` *(default)* | Plain HTTP only — fastest, zero dependencies |
+| Mode                          | Behaviour                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `--render never` _(default)_  | Plain HTTP only — fastest, zero dependencies                                |
 | `--render` or `--render auto` | Plain HTTP first, browser only for pages that come back as empty SPA shells |
-| `--render always` | Every page goes through the browser |
+| `--render always`             | Every page goes through the browser                                         |
 
 > [!TIP]
 > `auto` is usually what you want: static pages keep their millisecond speed and only the JavaScript-driven ones pay for a browser. Images, fonts and media are blocked while rendering (stylesheets are not — blocking those was measured to break hydration and lose half the links).
