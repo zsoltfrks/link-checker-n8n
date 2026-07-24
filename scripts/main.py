@@ -639,33 +639,32 @@ def render_banner(args: argparse.Namespace) -> None:
     Args:
         args: The parsed command line, used for the settings line.
     """
-    width = min(status_console.width, 78)
+    width = min(status_console.width, 60)
     centre = functools.partial(Align.center, width=width)
-    bar = Text("━" * width, style=ACCENT)
 
     title = Text("Link Health Checker  ", style="bold white")
     title.append(f"v{VERSION}", style=ACCENT)
 
     settings = Text()
+    settings.append("mode ", style="white")
     settings.append("crawl" if args.crawl else "sitemap", style=ACCENT)
-    settings.append("  ·  render ", style="dim")
+    settings.append("     render ", style="white")
     settings.append(args.render, style=ACCENT)
-    settings.append("  ·  ", style="dim")
+    settings.append("     ", style="white")
     settings.append(str(args.workers), style=ACCENT)
-    settings.append(" workers  ·  max ", style="dim")
+    settings.append(" workers     max ", style="white")
     settings.append(str(args.max_pages), style=ACCENT)
-    settings.append(" pages", style="dim")
+    settings.append(" pages", style="white")
 
     status_console.print()
-    status_console.print(centre(bar))
     if BANNER_FILE.is_file():
         logo = _gradient(
             BANNER_FILE.read_text(encoding="utf-8"), BANNER_FROM, BANNER_TO
         )
         status_console.print(centre(logo))
     status_console.print(centre(title))
-    status_console.print(centre(bar))
-    status_console.print(centre(Text(REPO_URL, style="dim")))
+    status_console.print(centre(Text(REPO_URL, style="white")))
+    status_console.print()
     status_console.print(centre(settings))
     status_console.print()
 
