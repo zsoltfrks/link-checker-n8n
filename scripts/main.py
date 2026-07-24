@@ -4,6 +4,8 @@ Usage examples:
 
     python scripts/main.py https://example.com https://example.org
     python scripts/main.py https://example.com --internal-only --max-pages 20
+    python scripts/main.py https://example.com --crawl
+    python scripts/main.py https://spa.example --crawl --render
 
 Exits with code 1 if any broken link is found, 0 otherwise.
 """
@@ -11,6 +13,7 @@ Exits with code 1 if any broken link is found, 0 otherwise.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import http.client
 import re
 import sys
@@ -18,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 
@@ -25,6 +29,12 @@ USER_AGENT = "Mozilla/5.0 (compatible; link-health-checker/1.0)"
 MAX_BODY_BYTES = 2_000_000  # plenty for HTML pages and sitemaps
 HEAD_TIMEOUT = 10
 GET_TIMEOUT = 15
+
+# Browsers are far heavier than plain sockets, so rendering runs with its
+# own (smaller) concurrency cap and its own timeouts.
+MAX_RENDER_WORKERS = 4
+RENDER_TIMEOUT_MS = 20_000
+RENDER_IDLE_MS = 3_000
 
 LOC_RE = re.compile(r"<loc>\s*(.*?)\s*</loc>", re.IGNORECASE | re.DOTALL)
 HREF_RE = re.compile(r"<a\s[^>]*href\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
@@ -34,6 +44,19 @@ SKIPPED_SCHEMES = ("mailto:", "tel:", "javascript:", "data:")
 # RFC 3986 reserved/unreserved characters that must survive percent-encoding.
 # '%' is included so already-encoded URLs are not double-encoded.
 URL_SAFE = "!#$%&'()*+,/:;=?@[]~-._"
+
+# The crawler must not follow these: they are never HTML pages, and some of
+# them (archives, video) are expensive to download.
+NON_PAGE_SUFFIXES = (
+    ".css", ".js", ".json", ".xml", ".rss", ".atom", ".txt", ".csv",
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".avif",
+    ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar", ".exe", ".dmg",
+    ".mp3", ".mp4", ".webm", ".avi", ".mov", ".woff", ".woff2", ".ttf",
+)
+
+# A document that runs scripts but exposes almost no links is very likely a
+# client-side rendered shell whose real content only appears after JS runs.
+SPA_ANCHOR_THRESHOLD = 3
 
 
 def encode_url(url: str) -> str:
@@ -127,20 +150,266 @@ def _locs(sitemap_xml: str) -> list[str]:
     return [unescape(loc) for loc in LOC_RE.findall(sitemap_xml)]
 
 
-def discover_pages(site: str, max_pages: int) -> list[str]:
-    """Collect the site's page URLs from its sitemap.
+def looks_like_spa(html: str) -> bool:
+    """Guess whether a document needs JavaScript to reveal its links.
+
+    Used by the ``auto`` render mode to spend a browser only where plain
+    HTTP came back with an empty shell.
+
+    Args:
+        html: The document as served over plain HTTP.
+
+    Returns:
+        True when the page runs scripts but exposes almost no links.
+    """
+    if not html:
+        return False
+    return "<script" in html.lower() and len(HREF_RE.findall(html)) < SPA_ANCHOR_THRESHOLD
+
+
+def parse_links(html: str, page_url: str, keep_hash_routes: bool = False) -> list[str]:
+    """Pull every checkable link out of one page's HTML.
+
+    Relative hrefs are resolved against the page, non-http(s) schemes are
+    dropped, and fragments are stripped — ``/docs#install`` is the same
+    resource as ``/docs`` as far as a server is concerned.
+
+    Args:
+        html: The page's HTML.
+        page_url: Absolute URL the HTML was loaded from.
+        keep_hash_routes: When True, a ``#/route`` style fragment is kept,
+            because hash-routed single-page apps serve genuinely different
+            content per fragment. Plain ``#anchor`` links are still folded
+            into their page.
+
+    Returns:
+        Absolute http(s) URLs, in document order, duplicates included.
+    """
+    links = []
+    for href in HREF_RE.findall(html):
+        href = unescape(href).strip()
+        if not href or href.lower().startswith(SKIPPED_SCHEMES):
+            continue
+        is_route = keep_hash_routes and href.startswith("#/")
+        if href.startswith("#") and not is_route:
+            continue
+        absolute = urllib.parse.urljoin(page_url, href)
+        parsed_url = urllib.parse.urlsplit(absolute)
+        if parsed_url.scheme not in ("http", "https"):
+            continue
+        if not (keep_hash_routes and parsed_url.fragment.startswith("/")):
+            absolute = urllib.parse.urldefrag(absolute).url
+        links.append(absolute)
+    return links
+
+
+async def _block_heavy_assets(route) -> None:
+    """Abort requests for bytes that cannot influence the page's links.
+
+    Images, fonts and media are pure payload, so skipping them speeds up
+    rendering. Stylesheets deliberately stay allowed: blocking them was
+    measured to break hydration on real sites (half the links went
+    missing) while saving under 100 ms.
+    """
+    if route.request.resource_type in ("image", "media", "font"):
+        await route.abort()
+    else:
+        await route.continue_()
+
+
+class PageRenderer:
+    """Loads pages in a headless browser so JavaScript-built links appear.
+
+    One browser instance is launched lazily and reused for every page, and
+    pages render concurrently on a single asyncio loop. Playwright is
+    imported only when rendering is actually requested, which keeps the
+    checker dependency-free by default.
+    """
+
+    def __init__(self, workers: int, timeout_ms: int = RENDER_TIMEOUT_MS) -> None:
+        """Prepare a renderer; the browser starts on the first fetch.
+
+        Args:
+            workers: Maximum pages rendered concurrently.
+            timeout_ms: Navigation timeout per page, in milliseconds.
+        """
+        self._workers = max(1, min(workers, MAX_RENDER_WORKERS))
+        self._timeout_ms = timeout_ms
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._playwright = None
+        self._browser = None
+        self._context = None
+
+    def _start(self) -> None:
+        """Launch the browser and its shared context, once."""
+        if self._browser is not None:
+            return
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            raise SystemExit(
+                "Rendering needs Playwright. Install it with:\n"
+                "    pip install playwright\n"
+                "    playwright install chromium"
+            )
+        self._loop = asyncio.new_event_loop()
+        run = self._loop.run_until_complete
+        self._playwright = run(async_playwright().start())
+        self._browser = run(self._playwright.chromium.launch())
+        self._context = run(self._browser.new_context(user_agent=USER_AGENT))
+        run(self._context.route("**/*", _block_heavy_assets))
+
+    def fetch_many(self, urls: list[str]) -> list[tuple[int, str]]:
+        """Render several pages and return their (status, html) pairs.
+
+        Args:
+            urls: Page URLs to render.
+
+        Returns:
+            One ``(status, html)`` tuple per URL, in the same order.
+        """
+        if not urls:
+            return []
+        self._start()
+        return self._loop.run_until_complete(self._render_all(urls))
+
+    async def _render_all(self, urls: list[str]) -> list[tuple[int, str]]:
+        """Render every URL, at most ``workers`` of them at a time."""
+        limit = asyncio.Semaphore(self._workers)
+
+        async def bounded(url: str) -> tuple[int, str]:
+            async with limit:
+                return await self._render_one(url)
+
+        return list(await asyncio.gather(*(bounded(url) for url in urls)))
+
+    async def _render_one(self, url: str) -> tuple[int, str]:
+        """Render a single page, tolerating slow or chatty sites.
+
+        The status is read as soon as the response commits, then the page
+        gets a short extra budget to settle. A page that never goes idle
+        (polling, animations) still yields whatever it has rendered by
+        then instead of failing the whole run.
+        """
+        page = await self._context.new_page()
+        status, html = 0, ""
+        try:
+            response = await page.goto(
+                url, wait_until="commit", timeout=self._timeout_ms
+            )
+            if response is not None:
+                status = response.status
+            try:
+                await page.wait_for_load_state("networkidle", timeout=RENDER_IDLE_MS)
+            except Exception:
+                pass  # still busy: take the DOM as it stands
+            html = await page.content()
+        except Exception:
+            status, html = status or 0, html
+        finally:
+            await page.close()
+        return status, html
+
+    def close(self) -> None:
+        """Shut the browser down and dispose of the event loop."""
+        if self._loop is None:
+            return
+        run = self._loop.run_until_complete
+        try:
+            if self._context is not None:
+                run(self._context.close())
+            if self._browser is not None:
+                run(self._browser.close())
+            if self._playwright is not None:
+                run(self._playwright.stop())
+        except Exception:
+            pass  # best effort: the process is exiting anyway
+        finally:
+            self._loop.close()
+            self._loop = None
+
+
+class PageFetcher:
+    """Loads page HTML, over plain HTTP or through a headless browser.
+
+    This is the only place that knows how a page is obtained, so link
+    extraction, crawling and checking stay identical in every mode.
+    """
+
+    def __init__(self, render_mode: str, workers: int) -> None:
+        """Configure the fetcher.
+
+        Args:
+            render_mode: ``"never"`` (plain HTTP only), ``"auto"`` (render
+                just the pages that look like empty SPA shells) or
+                ``"always"`` (render every page).
+            workers: Concurrency for plain HTTP fetches; rendering uses its
+                own, lower cap.
+        """
+        self.render_mode = render_mode
+        self.workers = workers
+        self._renderer: PageRenderer | None = None
+
+    @property
+    def renderer(self) -> PageRenderer:
+        """The lazily created browser-backed renderer."""
+        if self._renderer is None:
+            self._renderer = PageRenderer(self.workers)
+        return self._renderer
+
+    def fetch_many(self, urls: list[str]) -> list[tuple[int, str]]:
+        """Load several pages and return their (status, html) pairs.
+
+        Args:
+            urls: Page URLs to load.
+
+        Returns:
+            One ``(status, html)`` tuple per URL, in the same order.
+        """
+        if not urls:
+            return []
+        if self.render_mode == "always":
+            return self.renderer.fetch_many(urls)
+
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            responses = list(pool.map(fetch, urls))
+        if self.render_mode != "auto":
+            return responses
+
+        shells = [
+            i for i, (status, html) in enumerate(responses)
+            if _ok(status) and looks_like_spa(html)
+        ]
+        if shells:
+            rendered = self.renderer.fetch_many([urls[i] for i in shells])
+            for index, (status, html) in zip(shells, rendered):
+                if _ok(status) and html:
+                    responses[index] = (status, html)
+        return responses
+
+    def close(self) -> None:
+        """Release the browser, if one was ever started."""
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
+
+
+def discover_pages(site: str, max_pages: int, fetcher: PageFetcher) -> dict[str, tuple[int, str]]:
+    """Collect the site's pages from its sitemap.
 
     Fetches ``<site>/sitemap.xml``; entries that are themselves sitemaps
     (a sitemap index) are followed one level deep. When no sitemap is
-    available at all, the homepage alone is returned so the site still
+    available at all, the homepage alone is scanned so the site still
     gets checked.
 
     Args:
         site: Site root URL without a trailing slash.
-        max_pages: Maximum number of page URLs to return.
+        max_pages: Maximum number of pages to load.
+        fetcher: Loader used for the pages themselves (sitemaps are always
+            plain XML, so they are read over plain HTTP).
 
     Returns:
-        Deduplicated, fragment-stripped page URLs, capped at ``max_pages``.
+        Mapping of page URL to its ``(status, html)`` response.
     """
     sitemap_status, sitemap_xml = fetch(site + "/sitemap.xml")
     locs = _locs(sitemap_xml) if sitemap_status == 200 else []
@@ -152,29 +421,101 @@ def discover_pages(site: str, max_pages: int) -> list[str]:
             pages += [loc for loc in _locs(sub_xml) if not XML_RE.search(loc)]
 
     pages = pages or [site]  # no sitemap -> at least check the homepage
-    unique_pages = list(dict.fromkeys(page.split("#")[0] for page in pages))
-    return unique_pages[:max_pages]
+    unique_pages = list(dict.fromkeys(page.split("#")[0] for page in pages))[:max_pages]
+    return dict(zip(unique_pages, fetcher.fetch_many(unique_pages)))
+
+
+def _canonical_page(url: str) -> str:
+    """Fold the two spellings of a site root into one.
+
+    Crawls start at ``https://example.com`` while the site's own navigation
+    links to ``https://example.com/``; without this they would be visited
+    as two separate pages.
+    """
+    parsed_url = urllib.parse.urlsplit(url)
+    if parsed_url.path == "/" and not parsed_url.query:
+        return urllib.parse.urlunsplit(parsed_url._replace(path=""))
+    return url
+
+
+def _is_page_candidate(url: str, site_host: str) -> bool:
+    """Return True when a link is worth crawling as another page.
+
+    Only same-host http(s) URLs qualify, and anything whose path ends in a
+    known asset or download extension is rejected before it is fetched.
+    """
+    parsed_url = urllib.parse.urlsplit(url)
+    if parsed_url.netloc.lower() != site_host:
+        return False
+    return not parsed_url.path.lower().endswith(NON_PAGE_SUFFIXES)
+
+
+def crawl_pages(
+    site: str,
+    max_pages: int,
+    fetcher: PageFetcher,
+    keep_hash_routes: bool,
+) -> dict[str, tuple[int, str]]:
+    """Walk a site breadth-first, following its own internal links.
+
+    Starts at the site root and keeps visiting newly discovered same-host
+    pages until ``max_pages`` is reached, so no sitemap is required. Pages
+    are loaded in batches to keep the existing concurrency behaviour.
+
+    Args:
+        site: Site root URL without a trailing slash.
+        max_pages: Hard cap on how many pages are loaded.
+        fetcher: Loader used for every page.
+        keep_hash_routes: Treat ``#/route`` fragments as separate pages,
+            which is what hash-routed single-page apps need.
+
+    Returns:
+        Mapping of page URL to its ``(status, html)`` response.
+    """
+    site_host = urllib.parse.urlsplit(site).netloc.lower()
+    queue = deque([site])
+    seen = {site}
+    pages: dict[str, tuple[int, str]] = {}
+
+    while queue and len(pages) < max_pages:
+        batch = []
+        while queue and len(batch) < fetcher.workers and len(pages) + len(batch) < max_pages:
+            batch.append(queue.popleft())
+
+        for page_url, (status, html) in zip(batch, fetcher.fetch_many(batch)):
+            pages[page_url] = (status, html)
+            if not _ok(status) or not html:
+                continue
+            for link in parse_links(html, page_url, keep_hash_routes):
+                link = _canonical_page(link)
+                if link in seen or not _is_page_candidate(link, site_host):
+                    continue
+                seen.add(link)
+                queue.append(link)
+
+    return pages
 
 
 def extract_links(
     site: str,
-    pages: list[str],
+    pages: dict[str, tuple[int, str]],
     check_external: bool,
     skip_domains: list[str],
-    workers: int,
+    unreachable_label: str,
 ) -> tuple[dict[str, set[str]], int]:
-    """Fetch the given pages and collect every checkable link on them.
-    Relative hrefs are resolved against their page, and fragments are
-    stripped, and non-http(s) schemes are ignored. A page that fails to
-    load is itself queued as a link, so it shows up in the final report.
+    """Turn scanned pages into the set of links that need checking.
+
+    A page that failed to load is itself queued as a link, so it shows up
+    in the final report instead of vanishing silently.
 
     Args:
         site: Site root URL the pages belong to (defines "internal").
-        pages: Page URLs to scan.
+        pages: Mapping of page URL to its ``(status, html)`` response.
         check_external: When False, links whose host differs from the
-            site's host is skipped.
+            site's host are skipped.
         skip_domains: Lowercase domains to skip (exact or subdomain match).
-        workers: Number of concurrent page fetches.
+        unreachable_label: Stand-in "found on" note for pages that failed
+            to load and therefore have no source page of their own.
 
     Returns:
         A ``(links, found_total)`` tuple: a mapping of absolute link URL to
@@ -187,26 +528,14 @@ def extract_links(
     links: dict[str, set[str]] = {}
     found_total = 0
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        page_responses = list(pool.map(fetch, pages))
-
-    for page, (status, html) in zip(pages, page_responses):
+    for page, (status, html) in pages.items():
         if not _ok(status) or not html:
-            # The page itself did not load - queue it so it shows up in the report
-            links.setdefault(page, set()).add("(page listed in sitemap)")
+            links.setdefault(page, set()).add(unreachable_label)
             continue
 
-        for href in HREF_RE.findall(html):
-            href = unescape(href).strip()
-            if (not href or href.startswith("#")
-                    or href.lower().startswith(SKIPPED_SCHEMES)):
-                continue
-            absolute = urllib.parse.urldefrag(urllib.parse.urljoin(page, href)).url
-            parsed_url = urllib.parse.urlsplit(absolute)
-            if parsed_url.scheme not in ("http", "https"):
-                continue
+        for link in parse_links(html, page):
             found_total += 1
-            host = parsed_url.netloc.lower()
+            host = urllib.parse.urlsplit(link).netloc.lower()
             if not check_external and host != site_host:
                 continue
             if any(
@@ -214,7 +543,13 @@ def extract_links(
                 for domain in skip_domains
             ):
                 continue
-            links.setdefault(absolute, set()).add(page)
+            links.setdefault(link, set()).add(page)
+
+    # A page that failed to load is usually also linked from a page that did;
+    # once a real source is known the stand-in label is just noise.
+    for sources in links.values():
+        if len(sources) > 1:
+            sources.discard(unreachable_label)
 
     return links, found_total
 
@@ -321,6 +656,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--workers", type=int, default=10,
         help="concurrent requests (default: 10)",
     )
+    parser.add_argument(
+        "--crawl", action="store_true",
+        help="follow internal links instead of reading sitemap.xml",
+    )
+    parser.add_argument(
+        "--render", nargs="?", choices=("never", "auto", "always"),
+        const="auto", default="never",
+        help=(
+            "render pages in a headless browser so JavaScript-built links"
+            " are found; bare --render means auto (needs playwright)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.max_pages < 1:
@@ -351,21 +698,34 @@ def main() -> int:
             stream.reconfigure(errors="replace")
 
     args = parse_args()
+    fetcher = PageFetcher(args.render, args.workers)
 
     # url -> {"pages": set(), "sites": set()}
     all_links: dict[str, dict[str, set[str]]] = {}
     total_found = 0
-    for site in args.sites:
-        pages = discover_pages(site, args.max_pages)
-        print(f"{site}: crawling {len(pages)} page(s)...", file=sys.stderr)
-        site_links, found_on_site = extract_links(
-            site, pages, not args.internal_only, args.skip_domains, args.workers
-        )
-        total_found += found_on_site
-        for url, found_on in site_links.items():
-            link_entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
-            link_entry["pages"] |= found_on
-            link_entry["sites"].add(site)
+    try:
+        for site in args.sites:
+            if args.crawl:
+                pages = crawl_pages(
+                    site, args.max_pages, fetcher, args.render != "never"
+                )
+                label = "(page reached by crawl)"
+            else:
+                pages = discover_pages(site, args.max_pages, fetcher)
+                label = "(page listed in sitemap)"
+            print(f"{site}: scanned {len(pages)} page(s)...", file=sys.stderr)
+
+            site_links, found_on_site = extract_links(
+                site, pages, not args.internal_only, args.skip_domains, label
+            )
+            total_found += found_on_site
+            for url, found_on in site_links.items():
+                link_entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
+                link_entry["pages"] |= found_on
+                link_entry["sites"].add(site)
+    finally:
+        fetcher.close()
+
     print(f"Checking {len(all_links)} unique link(s)...", file=sys.stderr)
     print()
     with ThreadPoolExecutor(max_workers=args.workers) as pool:

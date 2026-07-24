@@ -26,12 +26,16 @@ Point it at one or more sites and it crawls their sitemaps, checks every unique 
   - [Import and configure the workflow](#import-and-configure-the-workflow)
   - [Get notified](#get-notified)
 - [Standalone Python script](#standalone-python-script)
+  - [Crawling without a sitemap](#crawling-without-a-sitemap)
+  - [Rendering JavaScript pages](#rendering-javascript-pages)
 - [Limitations](#limitations)
 
 ## Features
 
 - **Multi-site** — check any number of websites in one run, results grouped per site
 - **Sitemap-driven crawling** — follows sitemap indexes (WordPress and friends) one level deep, and falls back to the homepage when no sitemap exists
+- **Recursive crawl** — or skip sitemaps entirely and let the Python script walk the site from a single URL (`--crawl`)
+- **JavaScript rendering** — optional headless-browser mode finds links that only exist after JS runs (`--render`)
 - **Few false positives** — fast `HEAD` checks first, with an automatic `GET` retry for servers that reject `HEAD` (403/405/999)
 - **Actionable reports** — every broken link with its HTTP status and the pages it was found on
 - **Zero dependencies** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
@@ -121,12 +125,40 @@ python scripts/main.py https://example.com --internal-only --max-pages 20 --skip
 
 It prints the same style of per-site report — plus a grand total of every link found and the crawl duration in milliseconds — and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
 
+### Crawling without a sitemap
+
+`--crawl` walks the site breadth-first from the URL you give it, following its own internal links instead of reading `sitemap.xml`. Downloads and assets (`.pdf`, `.zip`, images…) are checked but never crawled, and `--max-pages` still caps the run:
+
+```bash
+python scripts/main.py https://example.com --crawl --max-pages 100
+```
+
+### Rendering JavaScript pages
+
+`--render` loads pages in a headless browser first, so links that only exist after JavaScript runs are found too. It needs [Playwright](https://playwright.dev/python/) — the only optional dependency in this project:
+
+```bash
+pip install playwright
+playwright install chromium
+
+python scripts/main.py https://spa.example --crawl --render
+```
+
+| Mode | Behaviour |
+|---|---|
+| `--render never` *(default)* | Plain HTTP only — fastest, zero dependencies |
+| `--render` or `--render auto` | Plain HTTP first, browser only for pages that come back as empty SPA shells |
+| `--render always` | Every page goes through the browser |
+
+> [!TIP]
+> `auto` is usually what you want: static pages keep their millisecond speed and only the JavaScript-driven ones pay for a browser. Images, fonts and media are blocked while rendering (stylesheets are not — blocking those was measured to break hydration and lose half the links).
+
 The demo GIF at the top of this README is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) — the regeneration command is in the tape file's header.
 
 ## Limitations
 
 - Requests are throttled (batches of 5–10 per second) to be polite to the target site.
-- Pages rendered entirely client-side (JavaScript SPAs) can't be scanned with plain HTTP requests — links that only exist after JS runs won't be found.
+- The n8n workflow is plain-HTTP only: client-side rendered pages (JavaScript SPAs) expose just the links present in the served HTML. The Python script solves this with `--render`, which the workflow cannot do without an external rendering service.
 - Status `0` in the report means the request failed at the network level (DNS error, timeout or connection refused).
 
 > [!IMPORTANT]

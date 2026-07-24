@@ -18,5 +18,5 @@ Sleep 500ms
 Type "python scripts/main.py https://zsoltfrks.xyz --skip-domains linkedin.com"
 Sleep 500ms
 Enter
-Wait+Screen@60s /Link check for/
+Wait+Screen@60s /Crawl completed/
 Sleep 5s
