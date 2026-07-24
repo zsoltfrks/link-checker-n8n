@@ -1,10 +1,13 @@
-# VHS demo tape — regenerates scripts/demo.gif for the README.
+# VHS demo tape — regenerates docs/demo.gif for the README.
 #
-# Run from the repo root (needs Docker):
+# Run from the repo root (needs Docker). The container needs the checker's
+# dependencies too, since main.py imports Playwright at startup:
 #   docker run --rm -v "${PWD}:/vhs" --entrypoint bash ghcr.io/charmbracelet/vhs \
-#     -c "apt-get update -qq && apt-get install -y -qq python3 python-is-python3 >/dev/null && vhs docs/demo.tape"
+#     -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python-is-python3 >/dev/null \
+#         && pip install --break-system-packages -q -r requirements.txt \
+#         && vhs docs/demo.tape"
 
-Output scripts/demo.gif
+Output docs/demo.gif
 
 Set Shell bash
 Set FontSize 16

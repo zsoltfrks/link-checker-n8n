@@ -11,7 +11,7 @@
 </div>
 
 <p align="center">
-  <img src="scripts/demo.gif" alt="Link Health Checker crawling a site and printing its report" width="800">
+  <img src="docs/demo.gif" alt="Link Health Checker crawling a site and printing its report" width="800">
 </p>
 
 Point it at one or more sites and it crawls their sitemaps, checks every unique link it finds, and reports the broken ones grouped per site and including which pages they appear on, so you know exactly what to fix.
@@ -28,6 +28,8 @@ Point it at one or more sites and it crawls their sitemaps, checks every unique 
 - [Standalone Python script](#standalone-python-script)
   - [Crawling without a sitemap](#crawling-without-a-sitemap)
   - [Rendering JavaScript pages](#rendering-javascript-pages)
+  - [Running the tests](#running-the-tests)
+- [Repository layout](#repository-layout)
 - [Limitations](#limitations)
 
 ## Features
@@ -108,7 +110,7 @@ All data is persisted in the `n8n_data` volume, and the timezone in the compose 
 
 ### Import and configure the workflow
 
-1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`link-health-checker.json`](link-health-checker.json) (skip if you imported via the CLI above).
+1. In n8n, go to **Workflows** → **Create Workflow** → **⋯** → **Import from File** and select [`n8n/link-health-checker.json`](n8n/link-health-checker.json) (skip if you imported via the CLI above).
 2. Open the **Config** node and set your values:
 
    | Field                | Default                                    | Description                                                     |
@@ -164,7 +166,24 @@ python scripts/main.py https://spa.example --crawl --render
 > [!TIP]
 > `auto` is usually what you want: static pages keep their millisecond speed and only the JavaScript-driven ones pay for a browser. Images, fonts and media are blocked while rendering (stylesheets are not — blocking those was measured to break hydration and lose half the links).
 
+### Running the tests
+
+The suite covers URL handling, both discovery modes, the filters and the rendering path, against a fixture site served locally — no internet access needed:
+
+```bash
+python -m unittest discover -s tests
+```
+
 The demo GIF at the top of this README is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) — the regeneration command is in the tape file's header.
+
+## Repository layout
+
+```
+docs/        demo GIF and the VHS tape that regenerates it
+n8n/         the importable workflow JSON
+scripts/     the standalone Python checker
+tests/       unittest suite and the fixture site it runs against
+```
 
 ## Limitations
 
