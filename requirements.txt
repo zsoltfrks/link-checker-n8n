@@ -6,3 +6,6 @@
 # Playwright ships the headless browser used by --render. The browser
 # itself is not a pip package, so the second command above is required too.
 playwright>=1.40
+
+# Terminal output: banner, progress bars and the result tables.
+rich>=13.0

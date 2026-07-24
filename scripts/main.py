@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import http.client
 import re
 import sys
@@ -22,10 +23,37 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape
+from pathlib import Path
 
 from playwright.async_api import async_playwright
+from rich.align import Align
+from rich.console import Console
+from rich.padding import Padding
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
+from rich.text import Text
+
+VERSION = "1.0.0"
+REPO_URL = "github.com/zsoltfrks/link-health-checker"
+BANNER_FILE = Path(__file__).with_name("ascii.txt")
+BANNER_FROM = (253, 166, 172)  # light tint of the accent, top of the logo
+BANNER_TO = (150, 43, 50)  # dark shade of the accent, bottom of the logo
+ACCENT = "#f9727c"
+
+# The report goes to stdout so `main.py ... > report.txt` captures exactly
+# that; the banner and progress bars are chrome and belong on stderr.
+console = Console()
+status_console = Console(stderr=True)
 
 USER_AGENT = "Mozilla/5.0 (compatible; link-health-checker/1.0)"
 MAX_BODY_BYTES = 2_000_000  # plenty for HTML pages and sitemaps
@@ -386,7 +414,12 @@ class PageFetcher:
             self._renderer = None
 
 
-def discover_pages(site: str, max_pages: int, fetcher: PageFetcher) -> dict[str, tuple[int, str]]:
+def discover_pages(
+    site: str,
+    max_pages: int,
+    fetcher: PageFetcher,
+    on_progress: Callable[[int], None] | None = None,
+) -> dict[str, tuple[int, str]]:
     """Collect the site's pages from its sitemap.
 
     Fetches ``<site>/sitemap.xml``; entries that are themselves sitemaps
@@ -399,6 +432,7 @@ def discover_pages(site: str, max_pages: int, fetcher: PageFetcher) -> dict[str,
         max_pages: Maximum number of pages to load.
         fetcher: Loader used for the pages themselves (sitemaps are always
             plain XML, so they are read over plain HTTP).
+        on_progress: Called with the number of pages loaded so far.
 
     Returns:
         Mapping of page URL to its ``(status, html)`` response.
@@ -414,7 +448,10 @@ def discover_pages(site: str, max_pages: int, fetcher: PageFetcher) -> dict[str,
 
     pages = pages or [site]  # no sitemap -> at least check the homepage
     unique_pages = list(dict.fromkeys(page.split("#")[0] for page in pages))[:max_pages]
-    return dict(zip(unique_pages, fetcher.fetch_many(unique_pages)))
+    responses = fetcher.fetch_many(unique_pages)
+    if on_progress is not None:
+        on_progress(len(unique_pages))
+    return dict(zip(unique_pages, responses))
 
 
 def _canonical_page(url: str) -> str:
@@ -447,6 +484,7 @@ def crawl_pages(
     max_pages: int,
     fetcher: PageFetcher,
     keep_hash_routes: bool,
+    on_progress: Callable[[int], None] | None = None,
 ) -> dict[str, tuple[int, str]]:
     """Walk a site breadth-first, following its own internal links.
 
@@ -460,6 +498,8 @@ def crawl_pages(
         fetcher: Loader used for every page.
         keep_hash_routes: Treat ``#/route`` fragments as separate pages,
             which is what hash-routed single-page apps need.
+        on_progress: Called after every batch with the number of pages
+            loaded so far, since the total is unknown until the end.
 
     Returns:
         Mapping of page URL to its ``(status, html)`` response.
@@ -484,6 +524,9 @@ def crawl_pages(
                     continue
                 seen.add(link)
                 queue.append(link)
+
+        if on_progress is not None:
+            on_progress(len(pages))
 
     return pages
 
@@ -567,14 +610,92 @@ def check_link(url: str) -> int:
     return status
 
 
-def build_report(
+def _gradient(text: str, start: tuple[int, int, int], end: tuple[int, int, int]) -> Text:
+    """Colour each line of a block of text along an RGB gradient.
+
+    Args:
+        text: Multi-line text, typically the ASCII logo.
+        start: RGB colour of the first line.
+        end: RGB colour of the last line.
+
+    Returns:
+        Rich text with one colour per line.
+    """
+    lines = text.rstrip("\n").split("\n")
+    steps = max(len(lines) - 1, 1)
+    rendered = Text()
+    for index, line in enumerate(lines):
+        ratio = index / steps
+        red, green, blue = (
+            int(begin + (finish - begin) * ratio) for begin, finish in zip(start, end)
+        )
+        rendered.append(line + "\n", style=f"#{red:02x}{green:02x}{blue:02x}")
+    return rendered
+
+
+def render_banner(args: argparse.Namespace) -> None:
+    """Print the logo and the settings this run will use.
+
+    Args:
+        args: The parsed command line, used for the settings line.
+    """
+    width = min(status_console.width, 78)
+    centre = functools.partial(Align.center, width=width)
+    bar = Text("━" * width, style=ACCENT)
+
+    title = Text("Link Health Checker  ", style="bold white")
+    title.append(f"v{VERSION}", style=ACCENT)
+
+    settings = Text()
+    settings.append("crawl" if args.crawl else "sitemap", style=ACCENT)
+    settings.append("  ·  render ", style="dim")
+    settings.append(args.render, style=ACCENT)
+    settings.append("  ·  ", style="dim")
+    settings.append(str(args.workers), style=ACCENT)
+    settings.append(" workers  ·  max ", style="dim")
+    settings.append(str(args.max_pages), style=ACCENT)
+    settings.append(" pages", style="dim")
+
+    status_console.print()
+    status_console.print(centre(bar))
+    if BANNER_FILE.is_file():
+        logo = _gradient(
+            BANNER_FILE.read_text(encoding="utf-8"), BANNER_FROM, BANNER_TO
+        )
+        status_console.print(centre(logo))
+    status_console.print(centre(title))
+    status_console.print(centre(bar))
+    status_console.print(centre(Text(REPO_URL, style="dim")))
+    status_console.print(centre(settings))
+    status_console.print()
+
+
+def _set_progress(progress: Progress, task: int, completed: int) -> None:
+    """Progress callback shape the discovery functions expect."""
+    progress.update(task, completed=completed)
+
+
+def make_progress() -> Progress:
+    """Build the progress display used for both phases of a run."""
+    return Progress(
+        SpinnerColumn(style=ACCENT),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(complete_style=ACCENT, finished_style="green"),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=status_console,
+    )
+
+
+def render_report(
     sites: list[str],
     all_links: dict[str, dict[str, set[str]]],
     broken: dict[str, int],
     total_found: int,
     elapsed_ms: int,
-) -> str:
-    """Format the check results as the per-site plain-text report.
+    pages_scanned: int,
+) -> None:
+    """Print the run summary and every broken link, grouped per site.
 
     Args:
         sites: The site root URLs that were checked.
@@ -584,32 +705,61 @@ def build_report(
         total_found: Grand total of link occurrences discovered on the
             scanned pages, before deduplication and skip filters.
         elapsed_ms: Wall-clock duration of the whole run in milliseconds.
-
-    Returns:
-        The complete report, ready to print.
+        pages_scanned: How many pages were loaded across all sites.
     """
-    report_lines = [
-        "",
-        f"Found {total_found} links in total; {len(all_links)} unique, {len(broken)} broken.",
-        f"Crawl completed in {elapsed_ms} ms.",
-        "",
-    ]
+    console.print(Text("Summary", style="bold"))
+    console.print()
+
+    summary = Table.grid(padding=(0, 3))
+    summary.add_column(style="dim", justify="right")
+    summary.add_column(style="bold")
+    summary.add_row("pages scanned", str(pages_scanned))
+    summary.add_row("links found", str(total_found))
+    summary.add_row("unique links", str(len(all_links)))
+    summary.add_row(
+        "broken",
+        Text(str(len(broken)), style="bold red" if broken else "bold green"),
+    )
+    summary.add_row("duration", f"{elapsed_ms / 1000:.1f} s")
+    console.print(Padding(summary, (0, 0, 0, 2)))
+    console.print()
+
     for site in sorted(sites):
         site_urls = [url for url, entry in all_links.items() if site in entry["sites"]]
         site_broken = sorted(url for url in site_urls if url in broken)
-        report_lines.append(
-            f"{site} - checked {len(site_urls)} links, {len(site_broken)} broken"
+
+        # A titled rule would truncate long URLs, so the site gets its own
+        # folding line under a plain separator.
+        console.rule(style="dim")
+        console.print(Padding(Text(site, style="bold", overflow="fold"), (0, 0, 0, 2)))
+
+        counts = Text("  ")
+        counts.append(f"{len(site_urls)} checked", style="dim")
+        counts.append("  ·  ", style="dim")
+        counts.append(
+            f"{len(site_broken)} broken", style="red" if site_broken else "green"
         )
+        console.print(counts)
+        console.print()
+
+        if not site_broken:
+            console.print(Text("  all links healthy", style="green"))
+            console.print()
+            continue
+
+        # URLs are the point of the report, so they get the full width: a
+        # narrow status column, then the link with its sources underneath.
+        table = Table.grid(padding=(0, 2))
+        table.add_column(style="bold red", justify="right", no_wrap=True)
+        table.add_column(overflow="fold")
         for url in site_broken:
-            if broken[url] == 0:
-                reason = "unreachable (DNS error or timeout)"
-            else:
-                reason = f"HTTP {broken[url]}"
-            pages_str = ", ".join(sorted(all_links[url]["pages"]))
-            report_lines.append(f"- {url}")
-            report_lines.append(f"  {reason} | found on: {pages_str}")
-        report_lines.append("")
-    return "\n".join(report_lines).strip()
+            status = broken[url]
+            entry = Text(url, style="bold")
+            entry.append("\nfound on: ", style="dim")
+            entry.append(", ".join(sorted(all_links[url]["pages"])), style="dim")
+            table.add_row("dead" if status == 0 else str(status), entry)
+        console.print(Padding(table, (0, 0, 0, 2)))
+        console.print()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -690,41 +840,61 @@ def main() -> int:
             stream.reconfigure(errors="replace")
 
     args = parse_args()
+    render_banner(args)
     fetcher = PageFetcher(args.render, args.workers)
 
     # url -> {"pages": set(), "sites": set()}
     all_links: dict[str, dict[str, set[str]]] = {}
     total_found = 0
-    try:
-        for site in args.sites:
-            if args.crawl:
-                pages = crawl_pages(
-                    site, args.max_pages, fetcher, args.render != "never"
+    pages_scanned = 0
+    statuses: dict[str, int] = {}
+
+    with make_progress() as progress:
+        try:
+            for site in args.sites:
+                host = urllib.parse.urlsplit(site).netloc
+                # The page count is unknown up front in both modes, so the
+                # task starts open-ended and is closed off once it is known.
+                task = progress.add_task(f"scanning {host}", total=None)
+                advance = functools.partial(_set_progress, progress, task)
+
+                if args.crawl:
+                    pages = crawl_pages(
+                        site, args.max_pages, fetcher, args.render != "never", advance
+                    )
+                    label = "(page reached by crawl)"
+                else:
+                    pages = discover_pages(site, args.max_pages, fetcher, advance)
+                    label = "(page listed in sitemap)"
+                progress.update(task, total=len(pages), completed=len(pages))
+                pages_scanned += len(pages)
+
+                site_links, found_on_site = extract_links(
+                    site, pages, not args.internal_only, args.skip_domains, label
                 )
-                label = "(page reached by crawl)"
-            else:
-                pages = discover_pages(site, args.max_pages, fetcher)
-                label = "(page listed in sitemap)"
-            print(f"{site}: scanned {len(pages)} page(s)...", file=sys.stderr)
+                total_found += found_on_site
+                for url, found_on in site_links.items():
+                    link_entry = all_links.setdefault(
+                        url, {"pages": set(), "sites": set()}
+                    )
+                    link_entry["pages"] |= found_on
+                    link_entry["sites"].add(site)
+        finally:
+            fetcher.close()
 
-            site_links, found_on_site = extract_links(
-                site, pages, not args.internal_only, args.skip_domains, label
-            )
-            total_found += found_on_site
-            for url, found_on in site_links.items():
-                link_entry = all_links.setdefault(url, {"pages": set(), "sites": set()})
-                link_entry["pages"] |= found_on
-                link_entry["sites"].add(site)
-    finally:
-        fetcher.close()
+        check_task = progress.add_task("checking links", total=len(all_links))
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            pending = {pool.submit(check_link, url): url for url in all_links}
+            for future in as_completed(pending):
+                statuses[pending[future]] = future.result()
+                progress.advance(check_task)
 
-    print(f"Checking {len(all_links)} unique link(s)...", file=sys.stderr)
-    print()
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        statuses = dict(zip(all_links, pool.map(check_link, all_links)))
     broken = {url: status for url, status in statuses.items() if not _ok(status)}
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
-    print(build_report(args.sites, all_links, broken, total_found, elapsed_ms))
+    console.print()
+    render_report(
+        args.sites, all_links, broken, total_found, elapsed_ms, pages_scanned
+    )
     return 1 if broken else 0
 
 

@@ -39,7 +39,7 @@ Point it at one or more sites and it crawls their sitemaps, checks every unique 
 - **Recursive crawl** — or skip sitemaps entirely and let the Python script walk the site from a single URL (`--crawl`)
 - **JavaScript rendering** — headless-browser mode finds links that only exist after JS runs (`--render`)
 - **Few false positives** — fast `HEAD` checks first, with an automatic `GET` retry for servers that reject `HEAD` (403/405/999)
-- **Actionable reports** — every broken link with its HTTP status and the pages it was found on
+- **Actionable reports** — every broken link with its HTTP status and the pages it was found on, with live progress while the crawl runs
 - **No-fuss workflow** — plain n8n 1.x nodes, no community packages, no credentials required; works self-hosted and on n8n Cloud
 - **Ready to schedule** — comes with a daily trigger, just activate the workflow
 
@@ -139,7 +139,10 @@ python scripts/main.py https://example.com https://example.org
 python scripts/main.py https://example.com --internal-only --max-pages 20 --skip-domains linkedin.com,x.com
 ```
 
-It prints the same style of per-site report — plus a grand total of every link found and the crawl duration in milliseconds — and exits with code `1` when broken links are found, so it can fail a pipeline — useful as a scheduled GitHub Action.
+It shows live progress while it works, then prints a per-site report of every broken link with its status and the pages it was found on. The summary adds the grand total of links found and how long the crawl took. Broken links mean exit code `1`, so the script can fail a pipeline — useful as a scheduled GitHub Action.
+
+> [!TIP]
+> Progress and the banner go to stderr, the report goes to stdout, so `python scripts/main.py https://example.com > report.txt` captures exactly the report and nothing else.
 
 ### Crawling without a sitemap
 
