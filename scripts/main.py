@@ -674,9 +674,21 @@ def _set_progress(progress: Progress, task: int, completed: int) -> None:
     progress.update(task, completed=completed)
 
 
+class CentredProgress(Progress):
+    """A progress display centred in the terminal.
+
+    Rich renders progress through a live-updating renderable, so centring
+    means wrapping whatever it produces on every refresh.
+    """
+
+    def get_renderable(self):
+        """Centre the live progress table on each refresh."""
+        return Align.center(super().get_renderable())
+
+
 def make_progress() -> Progress:
     """Build the progress display used for both phases of a run."""
-    return Progress(
+    return CentredProgress(
         SpinnerColumn(style=ACCENT),
         TextColumn("[bold]{task.description}"),
         BarColumn(complete_style=ACCENT, finished_style="green"),
@@ -706,7 +718,7 @@ def render_report(
         elapsed_ms: Wall-clock duration of the whole run in milliseconds.
         pages_scanned: How many pages were loaded across all sites.
     """
-    console.print(Text("Summary", style="bold"))
+    console.print(Align.center(Text("Summary", style="bold")))
     console.print()
 
     summary = Table.grid(padding=(0, 3))
@@ -720,7 +732,7 @@ def render_report(
         Text(str(len(broken)), style="bold red" if broken else "bold green"),
     )
     summary.add_row("duration", f"{elapsed_ms / 1000:.1f} s")
-    console.print(Padding(summary, (0, 0, 0, 2)))
+    console.print(Align.center(summary))
     console.print()
 
     for site in sorted(sites):
